@@ -4,25 +4,20 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
+// 정적 export(output: 'export')에서는 빌드 결과물인 dist/client/index.html이
+// 곧 렌더링 결과다. SSR 서버 번들의 worker.fetch 시그니처에 의존하지 않고
+// 빌드 타임에 프리렌더된 정적 HTML을 직접 읽어 동일한 계약을 검증한다.
 async function render() {
-  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
-  workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
-  const { default: worker } = await import(workerUrl.href);
-
-  return worker.fetch(
-    new Request("http://localhost/", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
+  const html = await readFile(
+    new URL("../dist/client/index.html", import.meta.url),
+    "utf8",
   );
+
+  return {
+    status: 200,
+    headers: { get: () => "text/html" },
+    text: async () => html,
+  };
 }
 
 test("server-renders the Korean product home and real learning interaction", async () => {

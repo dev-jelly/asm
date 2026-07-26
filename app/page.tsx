@@ -2,6 +2,11 @@ import { AddressValueLesson } from "./components/AddressValueLesson";
 import { LearningLab } from "./components/LearningLab";
 import { ProgressPanel } from "./components/ProgressPanel";
 
+// 정적 export(GitHub Pages)에서 이 라우트가 항상 빌드타임에 프리렌더되도록 보장.
+// vinext는 segment config이 없으면 라우트를 "unknown"으로 분류해 프리렌더에서
+// 건너뛸 수 있으므로, 단일 페이지를 명시적으로 static으로 고정한다.
+export const dynamic = "force-static";
+
 export default function Home() {
   return (
     <>

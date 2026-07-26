@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import "./globals.css";
 
 const title = "ASM LAB | 상태 변화로 배우는 RV32I";
@@ -8,51 +7,38 @@ const description =
 const socialDescription =
   "예측하고 실행하며 레지스터와 메모리가 왜 바뀌었는지 확인하세요.";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host =
-    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-  const forwardedProtocol = requestHeaders
-    .get("x-forwarded-proto")
-    ?.split(",")[0]
-    .trim();
-  const protocol =
-    forwardedProtocol ?? (host?.startsWith("localhost") ? "http" : "https");
-  let imageUrl: string | undefined;
-  if (host) {
-    try {
-      imageUrl = new URL("/og.png", `${protocol}://${host}`).toString();
-    } catch {
-      imageUrl = undefined;
-    }
-  }
+// GitHub Pages 정적 배포용 고정 메타데이터. vinext는 Next.js 순정과 달리
+// 메타데이터 URL에 basePath를 자동으로 붙이지 않으므로 아이콘과 OG 이미지는
+// 절대 경로/URL로 명시한다.
+const SITE_URL = "https://dev-jelly.github.io/asm";
+const OG_IMAGE_URL = `${SITE_URL}/og.png`;
 
-  return {
-    title: {
-      default: title,
-      template: "%s | ASM LAB",
-    },
-    description,
-    icons: {
-      icon: "/favicon.svg",
-      shortcut: "/favicon.svg",
-    },
-    openGraph: {
-      type: "website",
-      locale: "ko_KR",
-      siteName: "ASM LAB",
-      title,
-      description: socialDescription,
-      images: imageUrl ? [{ url: imageUrl, width: 1536, height: 1024 }] : [],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title,
-      description: socialDescription,
-      images: imageUrl ? [imageUrl] : [],
-    },
-  };
-}
+export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: title,
+    template: "%s | ASM LAB",
+  },
+  description,
+  icons: {
+    icon: "/asm/favicon.svg",
+    shortcut: "/asm/favicon.svg",
+  },
+  openGraph: {
+    type: "website",
+    locale: "ko_KR",
+    siteName: "ASM LAB",
+    title,
+    description: socialDescription,
+    images: [{ url: OG_IMAGE_URL, width: 1536, height: 1024 }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description: socialDescription,
+    images: [OG_IMAGE_URL],
+  },
+};
 
 export default function RootLayout({
   children,

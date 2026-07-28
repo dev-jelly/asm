@@ -1,21 +1,88 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { MachineOptions } from "../../lib/rv32i/types";
 import { useRv32iWorker } from "../hooks/useRv32iWorker";
 import { markLocalProgress } from "../lib/progress";
+import { ExecutionTimeline } from "./ExecutionTimeline";
 import { LabControls } from "./LabControls";
 import { MachineStateView } from "./MachineStateView";
 import { expectedPrediction, PredictionGate } from "./PredictionGate";
 
-const TRACER_SOURCE = `addi x5, x0, 7
+type LabPreset = {
+  id: string;
+  activityId: string;
+  title: string;
+  summary: string;
+  focus: string;
+  source: string;
+  options?: MachineOptions;
+};
+
+const LAB_PRESETS: readonly LabPreset[] = [
+  {
+    id: "word-roundtrip",
+    activityId: "tracer-bullet",
+    title: "워드 왕복",
+    summary: "값을 저장하고 다시 읽은 뒤 분기 결과를 확인합니다.",
+    focus: "주소 계산, 4바이트 store/load, 분기",
+    source: `addi x5, x0, 7
 sw   x5, 0(x10)
 lw   x6, 0(x10)
 beq  x5, x6, done
 addi x7, x0, 1
-done:`;
+done:`,
+  },
+  {
+    id: "signed-loads",
+    activityId: "signed-loads",
+    title: "부호 확장",
+    summary: "같은 바이트를 signed와 unsigned load로 다르게 읽습니다.",
+    focus: "lb/lbu, lh/lhu, 32비트 부호 확장",
+    source: `lb   x5, 0(x10)
+lbu  x6, 0(x10)
+lh   x7, 2(x10)
+lhu  x8, 2(x10)`,
+    options: {
+      initialMemory: [
+        { address: 0x1000, bytes: [0x80, 0x7f, 0x00, 0x80] },
+      ],
+    },
+  },
+  {
+    id: "little-endian",
+    activityId: "little-endian",
+    title: "바이트 조립",
+    summary: "폭이 다른 store가 한 워드 안에 배치되는 순서를 관찰합니다.",
+    focus: "sb/sh/sw, little-endian, 부분 쓰기",
+    source: `addi x5, x0, 127
+sb   x5, 0(x10)
+addi x6, x0, -1
+sh   x6, 2(x10)
+lw   x7, 0(x10)`,
+  },
+] as const;
 
 export function LearningLab() {
-  const lab = useRv32iWorker(TRACER_SOURCE);
+  const [presetId, setPresetId] = useState(LAB_PRESETS[0].id);
+  const selectedPreset =
+    LAB_PRESETS.find((preset) => preset.id === presetId) ?? LAB_PRESETS[0];
+  const [source, setSource] = useState(selectedPreset.source);
+  const [draftSource, setDraftSource] = useState(selectedPreset.source);
+  const [programRequestId, setProgramRequestId] = useState(0);
+  const lab = useRv32iWorker(
+    source,
+    selectedPreset.options,
+    programRequestId,
+  );
+  const programReady = lab.programReady;
+  const visibleStatus = lab.error
+    ? "error"
+    : programReady
+      ? lab.status
+      : "loading";
+  const visibleSnapshot = programReady ? lab.snapshot : null;
+  const isCustomProgram = source !== selectedPreset.source;
   const [gate, setGate] = useState({
     stepIndex: -1,
     prediction: "",
@@ -30,15 +97,27 @@ export function LearningLab() {
     expected: string;
   } | null>(null);
   const [runConfirmed, setRunConfirmed] = useState(false);
-  const currentStepIndex = lab.snapshot?.stepIndex ?? -1;
+  const currentStepIndex = visibleSnapshot?.stepIndex ?? -1;
   const activeGate =
     gate.stepIndex === currentStepIndex
       ? gate
       : { stepIndex: currentStepIndex, prediction: "", skipped: false };
 
   useEffect(() => {
-    if (lab.status === "completed") markLocalProgress("tracer-bullet");
-  }, [lab.status]);
+    if (
+      lab.status === "completed" &&
+      lab.programReady &&
+      source === selectedPreset.source
+    ) {
+      markLocalProgress(selectedPreset.activityId);
+    }
+  }, [
+    lab.programReady,
+    lab.status,
+    selectedPreset.activityId,
+    selectedPreset.source,
+    source,
+  ]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -50,24 +129,35 @@ export function LearningLab() {
         return;
       }
       const key = event.key.toLowerCase();
-      if (key === "s" && canReveal && lab.status === "ready") {
+      const readyForExecution =
+        visibleStatus === "ready" || visibleStatus === "paused";
+      if (key === "s" && canReveal && readyForExecution) {
         event.preventDefault();
         submitAndRun(lab.step);
-      } else if (key === "b" && (lab.snapshot?.historyDepth ?? 0) > 0) {
+      } else if (
+        key === "b" &&
+        visibleStatus !== "running" &&
+        (visibleSnapshot?.historyDepth ?? 0) > 0
+      ) {
         event.preventDefault();
         lab.back();
       } else if (
         key === "r" &&
         canReveal &&
         runConfirmed &&
-        lab.status === "ready"
+        readyForExecution
       ) {
         event.preventDefault();
         submitAndRun(lab.run);
-      } else if (key === "p" && lab.status === "running") {
+      } else if (key === "p" && visibleStatus === "running") {
         event.preventDefault();
         lab.pause();
-      } else if (event.key === "0" && lab.status !== "running") {
+      } else if (
+        event.key === "0" &&
+        visibleStatus !== "loading" &&
+        visibleStatus !== "running" &&
+        visibleStatus !== "error"
+      ) {
         event.preventDefault();
         resetLab();
       }
@@ -99,7 +189,7 @@ export function LearningLab() {
       : "";
 
   function submitAndRun(action: () => void) {
-    const instruction = lab.snapshot?.currentInstruction;
+    const instruction = visibleSnapshot?.currentInstruction;
     if (!canReveal || !instruction) return;
     setSubmittedPrediction({
       value: activeGate.prediction,
@@ -119,13 +209,33 @@ export function LearningLab() {
     lab.reset();
   }
 
+  function prepareNewProgram(nextSource: string) {
+    setGate({ stepIndex: -1, prediction: "", skipped: false });
+    setSubmittedPrediction(null);
+    setRunConfirmed(false);
+    setProgramRequestId((requestId) => requestId + 1);
+    setSource(nextSource);
+    setDraftSource(nextSource);
+  }
+
+  function selectPreset(preset: LabPreset) {
+    if (lab.status === "running") lab.pause();
+    setPresetId(preset.id);
+    prepareNewProgram(preset.source);
+  }
+
+  function applyDraft() {
+    if (!draftSource.trim() || lab.status === "running") return;
+    prepareNewProgram(draftSource);
+  }
+
   return (
     <section className="learning-lab" aria-labelledby="lab-title">
       <header className="lab-intro">
-        <h1 id="lab-title">실행 전에 다음 상태를 예측하세요.</h1>
+        <h1 id="lab-title">메모리는 바이트 단위로 움직입니다.</h1>
         <p>
-          한 줄씩 실행하며 PC, 레지스터, 메모리 변화를 같은 화면에서
-          확인합니다.
+          실행 전에 변화를 예측하고, 주소 계산부터 바이트 조립까지 한 화면에서
+          추적하세요.
         </p>
         <ul className="lab-promises" aria-label="학습 환경 안내">
           <li>로그인 없이 시작</li>
@@ -134,18 +244,46 @@ export function LearningLab() {
         </ul>
       </header>
 
+      <nav className="lab-preset-nav" aria-label="메모리 실험 선택">
+        {LAB_PRESETS.map((preset) => (
+          <button
+            key={preset.id}
+            type="button"
+            className="lab-preset-button"
+            data-selected={
+              !isCustomProgram && preset.id === selectedPreset.id
+                ? true
+                : undefined
+            }
+            aria-pressed={
+              !isCustomProgram && preset.id === selectedPreset.id
+            }
+            onClick={() => selectPreset(preset)}
+            disabled={lab.status === "running"}
+          >
+            <strong>{preset.title}</strong>
+            <span>{preset.summary}</span>
+          </button>
+        ))}
+      </nav>
+
       <div className="lab-workspace">
         <div className="lab-source-and-prediction">
           <section className="source-panel" aria-labelledby="source-title">
             <div className="section-heading-row">
               <h2 id="source-title">RV32I 코드</h2>
-              <span>명령어 네 개 · 상태 추적</span>
+              <span>
+                {isCustomProgram
+                  ? "사용자 코드 · 선택한 예제로 복원 가능"
+                  : selectedPreset.focus}
+              </span>
             </div>
             <ol className="source-code" aria-label="실행할 RV32I 프로그램">
-              {TRACER_SOURCE.split("\n").map((line, index) => {
+              {source.split("\n").map((line, index) => {
                 const lineNumber = index + 1;
                 const current =
-                  lab.snapshot?.currentInstruction?.sourceLine === lineNumber;
+                  visibleSnapshot?.currentInstruction?.sourceLine ===
+                  lineNumber;
                 return (
                   <li key={`${lineNumber}-${line}`} data-current={current || undefined}>
                     <span className="current-marker" aria-hidden="true">
@@ -157,17 +295,61 @@ export function LearningLab() {
                 );
               })}
             </ol>
+
+            <details className="source-editor">
+              <summary>코드 직접 편집</summary>
+              <label htmlFor="rv32i-source">
+                RV32I 소스
+                <span>
+                  지원: addi, lb, lbu, lh, lhu, lw, sb, sh, sw, beq
+                </span>
+              </label>
+              <textarea
+                id="rv32i-source"
+                value={draftSource}
+                onChange={(event) => setDraftSource(event.target.value)}
+                rows={Math.max(7, draftSource.split("\n").length + 1)}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+              />
+              <div className="source-editor-actions">
+                <button
+                  type="button"
+                  className="primary-control"
+                  onClick={applyDraft}
+                  disabled={
+                    lab.status === "running" ||
+                    !draftSource.trim() ||
+                    draftSource === source
+                  }
+                >
+                  프로그램 불러오기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => prepareNewProgram(selectedPreset.source)}
+                  disabled={
+                    lab.status === "running" ||
+                    (draftSource === selectedPreset.source &&
+                      source === selectedPreset.source)
+                  }
+                >
+                  예제로 복원
+                </button>
+              </div>
+            </details>
           </section>
 
           <PredictionGate
-            instruction={lab.snapshot?.currentInstruction ?? null}
+            instruction={visibleSnapshot?.currentInstruction ?? null}
             selected={activeGate.prediction}
             skipped={activeGate.skipped}
             disabled={
-              lab.status === "loading" ||
-              lab.status === "running" ||
-              lab.status === "completed" ||
-              lab.status === "error"
+              visibleStatus === "loading" ||
+              visibleStatus === "running" ||
+              visibleStatus === "completed" ||
+              visibleStatus === "error"
             }
             onSelect={(value) => {
               setSubmittedPrediction(null);
@@ -204,9 +386,9 @@ export function LearningLab() {
         </div>
 
         <LabControls
-          status={lab.status}
+          status={visibleStatus}
           canReveal={canReveal}
-          canBack={(lab.snapshot?.historyDepth ?? 0) > 0}
+          canBack={(visibleSnapshot?.historyDepth ?? 0) > 0}
           runConfirmed={runConfirmed}
           onRunConfirmed={setRunConfirmed}
           onStep={() => submitAndRun(lab.step)}
@@ -221,29 +403,42 @@ export function LearningLab() {
             <div className="lab-message error-message" role="alert">
               <strong>실행을 계속할 수 없습니다</strong>
               <p>{lab.error}</p>
-              <p>Reset으로 초기 상태를 복원하거나 페이지를 새로고침해 주세요.</p>
+              <p>Worker를 다시 시작하거나 선택한 예제로 복원하세요.</p>
+              <div className="lab-error-actions">
+                <button type="button" onClick={lab.retry}>
+                  Worker 다시 시작
+                </button>
+                <button
+                  type="button"
+                  className="primary-control"
+                  onClick={() => prepareNewProgram(selectedPreset.source)}
+                >
+                  예제로 복원
+                </button>
+              </div>
             </div>
-          ) : lab.status === "loading" || !lab.snapshot ? (
+          ) : visibleStatus === "loading" || !visibleSnapshot ? (
             <div className="lab-message">
               <strong>실험실 준비 중</strong>
               <p>명령어를 실행할 초기 상태를 준비하고 있습니다.</p>
             </div>
           ) : (
             <>
-              <div className="machine-status" data-status={lab.status}>
+              <div className="machine-status" data-status={visibleStatus}>
                 상태:{" "}
-                {lab.status === "completed"
+                {visibleStatus === "completed"
                   ? "실행 완료"
-                  : lab.status === "running"
+                  : visibleStatus === "running"
                     ? "연속 실행 중"
-                    : lab.status === "paused"
+                    : visibleStatus === "paused"
                       ? "일시정지"
                       : "예측 대기"}
               </div>
               <MachineStateView
-                snapshot={lab.snapshot}
+                snapshot={visibleSnapshot}
                 lastDelta={lab.lastDelta}
               />
+              <ExecutionTimeline trace={lab.trace} />
             </>
           )}
         </div>

@@ -1,10 +1,23 @@
-import { encodeAddi, encodeBeq, encodeLw, encodeSw } from "./encoding";
+import {
+  encodeAddi,
+  encodeBeq,
+  encodeLb,
+  encodeLbu,
+  encodeLh,
+  encodeLhu,
+  encodeLw,
+  encodeSb,
+  encodeSh,
+  encodeSw,
+} from "./encoding";
 import {
   type Instruction,
+  type LoadMnemonic,
   type MemoryOperand,
   type Program,
   type RegisterOperand,
   Rv32iError,
+  type StoreMnemonic,
 } from "./types";
 
 const MAX_SOURCE_BYTES = 16_384;
@@ -50,6 +63,26 @@ type SourceInstruction = {
   sourceLine: number;
   sourceText: string;
   text: string;
+};
+
+const LOAD_ENCODERS: Record<
+  LoadMnemonic,
+  (rd: number, rs1: number, offset: number) => number
+> = {
+  lb: encodeLb,
+  lbu: encodeLbu,
+  lh: encodeLh,
+  lhu: encodeLhu,
+  lw: encodeLw,
+};
+
+const STORE_ENCODERS: Record<
+  StoreMnemonic,
+  (rs2: number, rs1: number, offset: number) => number
+> = {
+  sb: encodeSb,
+  sh: encodeSh,
+  sw: encodeSw,
 };
 
 export function parseProgram(source: string): Program {
@@ -137,7 +170,7 @@ function parseInstruction(
     };
   }
 
-  if (mnemonic === "lw" || mnemonic === "sw") {
+  if (isLoadMnemonic(mnemonic) || isStoreMnemonic(mnemonic)) {
     assertOperandCount(item, operands, 2);
     const register = parseRegister(item, operands[0]);
     const memory = parseMemoryOperand(item, operands[1]);
@@ -146,19 +179,27 @@ function parseInstruction(
       sourceLine: item.sourceLine,
       sourceText: item.sourceText,
     };
-    if (mnemonic === "lw") {
+    if (isLoadMnemonic(mnemonic)) {
       return {
         ...common,
         mnemonic,
         operands: [registerOperand(register), memory],
-        encoding: encodeLw(register, memory.base, memory.offset),
+        encoding: LOAD_ENCODERS[mnemonic](
+          register,
+          memory.base,
+          memory.offset,
+        ),
       };
     }
     return {
       ...common,
       mnemonic,
       operands: [registerOperand(register), memory],
-      encoding: encodeSw(register, memory.base, memory.offset),
+      encoding: STORE_ENCODERS[mnemonic](
+        register,
+        memory.base,
+        memory.offset,
+      ),
     };
   }
 
@@ -193,6 +234,14 @@ function parseInstruction(
     "UNKNOWN_MNEMONIC",
     `'${mnemonic}'은 이 첫 실험실에서 지원하지 않습니다.`,
   );
+}
+
+function isLoadMnemonic(mnemonic: string): mnemonic is LoadMnemonic {
+  return Object.hasOwn(LOAD_ENCODERS, mnemonic);
+}
+
+function isStoreMnemonic(mnemonic: string): mnemonic is StoreMnemonic {
+  return Object.hasOwn(STORE_ENCODERS, mnemonic);
 }
 
 function splitOperands(text: string): string[] {

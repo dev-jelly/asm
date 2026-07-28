@@ -81,7 +81,7 @@ export function LabControls({
         <button
           type="button"
           onClick={onReset}
-          disabled={busy || running}
+          disabled={busy || running || error}
         >
           Reset
         </button>

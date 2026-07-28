@@ -11,7 +11,7 @@ type PredictionGateProps = {
 
 const OPTIONS = [
   { value: "register", label: "목적지 레지스터에 결과를 씁니다." },
-  { value: "memory", label: "계산한 메모리 주소에 4바이트를 씁니다." },
+  { value: "memory", label: "계산한 메모리 주소에 값을 씁니다." },
   { value: "pc", label: "조건 비교 결과로 다음 PC가 정해집니다." },
   {
     value: "none",
@@ -23,7 +23,13 @@ export function expectedPrediction(
   instruction: SerializedInstruction | null,
 ): string {
   if (!instruction) return "none";
-  if (instruction.mnemonic === "sw") return "memory";
+  if (
+    instruction.mnemonic === "sb" ||
+    instruction.mnemonic === "sh" ||
+    instruction.mnemonic === "sw"
+  ) {
+    return "memory";
+  }
   if (instruction.mnemonic === "beq") return "pc";
   return "register";
 }

@@ -9,7 +9,9 @@ import {
 } from "../lib/progress";
 
 const ACTIVITIES = [
-  { id: "tracer-bullet", label: "첫 상태 변화 추적" },
+  { id: "tracer-bullet", label: "워드 저장과 읽기 추적" },
+  { id: "signed-loads", label: "signed와 unsigned load 비교" },
+  { id: "little-endian", label: "little-endian 바이트 조립" },
   { id: "address-versus-value", label: "주소와 값 구분" },
 ] as const;
 
@@ -23,6 +25,7 @@ export function ProgressPanel() {
     status: "loading",
     data: emptyProgress(),
   });
+  const [confirmingReset, setConfirmingReset] = useState(false);
 
   useEffect(() => {
     const refresh = () => {
@@ -44,6 +47,10 @@ export function ProgressPanel() {
   }, []);
 
   function resetDeviceProgress() {
+    if (!confirmingReset) {
+      setConfirmingReset(true);
+      return;
+    }
     try {
       setState({
         status: "ready",
@@ -52,6 +59,21 @@ export function ProgressPanel() {
     } catch {
       setState({ status: "unavailable", data: emptyProgress() });
     }
+    setConfirmingReset(false);
+  }
+
+  function exportDeviceProgress() {
+    const blob = new Blob([JSON.stringify(state.data, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "asm-lab-progress.json";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   const completed = state.data.completedActivities.length;
@@ -79,8 +101,8 @@ export function ProgressPanel() {
                 {completed === 0
                   ? "아직 완료한 활동이 없습니다."
                   : completed === ACTIVITIES.length
-                    ? "첫 학습 경로를 완료했습니다."
-                    : "첫 학습 경로를 진행 중입니다."}
+                    ? "메모리 학습 경로를 완료했습니다."
+                    : "메모리 학습 경로를 진행 중입니다."}
               </strong>
               <span>
                 {completed} / {ACTIVITIES.length} 활동 완료
@@ -98,14 +120,31 @@ export function ProgressPanel() {
                 );
               })}
             </ul>
-            <button
-              type="button"
-              className="text-button danger-action"
-              onClick={resetDeviceProgress}
-              disabled={completed === 0}
-            >
-              이 기기의 진도 지우기
-            </button>
+            <div className="progress-actions">
+              <button
+                type="button"
+                onClick={exportDeviceProgress}
+              >
+                진도 내보내기
+              </button>
+              <button
+                type="button"
+                className="text-button danger-action"
+                onClick={resetDeviceProgress}
+                disabled={completed === 0}
+              >
+                {confirmingReset ? "정말 진도 지우기" : "이 기기의 진도 지우기"}
+              </button>
+              {confirmingReset ? (
+                <button
+                  type="button"
+                  className="text-button"
+                  onClick={() => setConfirmingReset(false)}
+                >
+                  취소
+                </button>
+              ) : null}
+            </div>
           </>
         )}
       </div>

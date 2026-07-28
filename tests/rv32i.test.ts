@@ -3,13 +3,24 @@ import test from "node:test";
 import {
   encodeAddi,
   encodeBeq,
+  encodeLb,
+  encodeLbu,
+  encodeLh,
+  encodeLhu,
   encodeLw,
+  encodeSb,
+  encodeSh,
   encodeSw,
 } from "../lib/rv32i/encoding";
 import { summarizeDeltaBatch } from "../app/hooks/useRv32iWorker";
 import { Rv32iMachine } from "../lib/rv32i/machine";
 import { parseProgram } from "../lib/rv32i/parser";
-import type { WorkerCommand, WorkerResponse } from "../lib/rv32i/protocol";
+import {
+  isWorkerCommand,
+  isWorkerResponse,
+  type WorkerCommand,
+  type WorkerResponse,
+} from "../lib/rv32i/protocol";
 import { appendTrace, DEFAULT_TRACE_LIMIT } from "../lib/rv32i/trace";
 import { Rv32iWorkerController } from "../lib/rv32i/worker-controller";
 import {
@@ -34,11 +45,56 @@ function command(
   } as WorkerCommand;
 }
 
-test("encodes representative addi, lw, sw, and beq instructions", () => {
+test("encodes representative arithmetic, memory, and branch instructions", () => {
   assert.equal(encodeAddi(5, 0, 7), 0x00700293);
+  assert.equal(encodeLb(5, 10, 0), 0x00050283);
+  assert.equal(encodeLbu(5, 10, 0), 0x00054283);
+  assert.equal(encodeLh(5, 10, 0), 0x00051283);
+  assert.equal(encodeLhu(5, 10, 0), 0x00055283);
   assert.equal(encodeLw(6, 10, 0), 0x00052303);
+  assert.equal(encodeSb(5, 10, 0), 0x00550023);
+  assert.equal(encodeSh(5, 10, 0), 0x00551023);
   assert.equal(encodeSw(5, 10, 0), 0x00552023);
   assert.equal(encodeBeq(5, 6, 8), 0x00628463);
+});
+
+test("public encoders reject register indices outside x0..x31", () => {
+  const encoders = [
+    () => encodeAddi(-1, 0, 0),
+    () => encodeLb(32, 0, 0),
+    () => encodeLbu(0, 1.5, 0),
+    () => encodeLh(0, -1, 0),
+    () => encodeLhu(0, 32, 0),
+    () => encodeLw(32, 0, 0),
+    () => encodeSb(-1, 0, 0),
+    () => encodeSh(0, 32, 0),
+    () => encodeSw(0, 1.5, 0),
+    () => encodeBeq(0, 32, 0),
+  ];
+
+  encoders.forEach((encode) => {
+    assert.throws(
+      encode,
+      (error) =>
+        error instanceof Rv32iError && error.code === "REGISTER_RANGE",
+    );
+  });
+});
+
+test("parses every supported byte, halfword, and word memory mnemonic", () => {
+  const program = parseProgram(`lb x1, 0(x10)
+lbu x2, 1(x10)
+lh x3, 2(x10)
+lhu x4, 4(x10)
+lw x5, 8(x10)
+sb x6, 12(x10)
+sh x7, 14(x10)
+sw x8, 16(x10)`);
+
+  assert.deepEqual(
+    program.instructions.map((instruction) => instruction.mnemonic),
+    ["lb", "lbu", "lh", "lhu", "lw", "sb", "sh", "sw"],
+  );
 });
 
 test("resolves forward and backward labels without assigning PC space to labels", () => {
@@ -89,6 +145,161 @@ lw x6, 0(x10)`, {
   ]);
   machine.step();
   assert.equal(machine.snapshot().registers[6], 0x12345678);
+});
+
+test("loads byte and halfword values with signed or unsigned extension", () => {
+  const machine = new Rv32iMachine(`lb x5, 0(x10)
+lbu x6, 0(x10)
+lh x7, 2(x10)
+lhu x8, 2(x10)
+lw x9, 4(x10)`, {
+    initialMemory: [
+      {
+        address: DATA_BASE,
+        bytes: [0x80, 0x01, 0x00, 0x80, 0x78, 0x56, 0x34, 0x12],
+      },
+    ],
+  });
+
+  const deltas = [
+    machine.step(),
+    machine.step(),
+    machine.step(),
+    machine.step(),
+    machine.step(),
+  ];
+  const snapshot = machine.snapshot();
+  assert.equal(snapshot.registers[5], 0xffffff80);
+  assert.equal(snapshot.registers[6], 0x00000080);
+  assert.equal(snapshot.registers[7], 0xffff8000);
+  assert.equal(snapshot.registers[8], 0x00008000);
+  assert.equal(snapshot.registers[9], 0x12345678);
+  assert.deepEqual(
+    deltas.map((delta) => delta.memoryAccesses[0].size),
+    [1, 1, 2, 2, 4],
+  );
+  assert.deepEqual(
+    deltas.map((delta) => delta.memoryAccesses[0].value),
+    [0xffffff80, 0x80, 0xffff8000, 0x8000, 0x12345678],
+  );
+  assert.ok(
+    deltas.every((delta) =>
+      delta.memoryAccesses[0].initialized?.every(Boolean),
+    ),
+  );
+});
+
+test("stores the low byte, halfword, or word in little-endian order", () => {
+  const machine = new Rv32iMachine(`sb x5, 1(x10)
+sh x5, 2(x10)
+sw x5, 4(x10)`, {
+    initialRegisters: { 5: 0xaabbccdd },
+  });
+
+  const byteStore = machine.step();
+  const halfStore = machine.step();
+  const wordStore = machine.step();
+
+  assert.deepEqual(machine.snapshot().memory.slice(0, 8), [
+    0x00, 0xdd, 0xdd, 0xcc, 0xdd, 0xcc, 0xbb, 0xaa,
+  ]);
+  assert.deepEqual(
+    [byteStore, halfStore, wordStore].map(
+      (delta) => delta.memoryAccesses[0].size,
+    ),
+    [1, 2, 4],
+  );
+  assert.deepEqual(
+    [byteStore, halfStore, wordStore].map(
+      (delta) => delta.memoryAccesses[0].value,
+    ),
+    [0xdd, 0xccdd, 0xaabbccdd],
+  );
+});
+
+test("tracks initialized bytes through access, Back, and Reset", () => {
+  const machine = new Rv32iMachine(`lh x6, 2(x10)
+sh x5, 2(x10)`, {
+    initialRegisters: { 5: 0xaabbccdd },
+    initialMemory: [{ address: DATA_BASE + 2, bytes: [0x80] }],
+  });
+  const initial = machine.snapshot();
+  assert.deepEqual(initial.memoryInitialized.slice(0, 5), [
+    false,
+    false,
+    true,
+    false,
+    false,
+  ]);
+
+  const load = machine.step();
+  assert.deepEqual(load.memoryAccesses[0].initialized, [true, false]);
+  assert.deepEqual(load.warnings, [
+    {
+      code: "UNINITIALIZED_READ",
+      addresses: [DATA_BASE + 3],
+      message: load.warnings[0].message,
+    },
+  ]);
+  assert.match(load.warnings[0].message, /초기화되지 않은 메모리/);
+  assert.equal(machine.snapshot().registers[6], 0x00000080);
+  assert.deepEqual(
+    machine.snapshot().memoryInitialized.slice(2, 4),
+    [true, false],
+  );
+
+  const store = machine.step();
+  assert.deepEqual(store.memoryPatches[0].initializedBefore, [true, false]);
+  assert.deepEqual(store.memoryPatches[0].initializedAfter, [true, true]);
+  assert.deepEqual(store.memoryAccesses[0].initialized, [true, true]);
+  assert.deepEqual(
+    machine.snapshot().memoryInitialized.slice(2, 4),
+    [true, true],
+  );
+
+  machine.back();
+  assert.deepEqual(
+    machine.snapshot().memoryInitialized.slice(2, 4),
+    [true, false],
+  );
+  assert.deepEqual(machine.snapshot().memory.slice(2, 4), [0x80, 0x00]);
+
+  machine.step();
+  machine.reset();
+  assert.deepEqual(machine.snapshot(), initial);
+});
+
+test("initialized loads do not emit uninitialized-read warnings", () => {
+  const machine = new Rv32iMachine("lw x5, 0(x10)", {
+    initialMemory: [
+      { address: DATA_BASE, bytes: [0x78, 0x56, 0x34, 0x12] },
+    ],
+  });
+  const delta = machine.step();
+
+  assert.deepEqual(delta.warnings, []);
+  assert.equal(machine.snapshot().registers[5], 0x12345678);
+});
+
+test("enforces natural alignment for halfword and word but not byte access", () => {
+  const byteMachine = new Rv32iMachine(`sb x5, 1(x10)
+lb x6, 1(x10)`, {
+    initialRegisters: { 5: 0x80 },
+  });
+  assert.doesNotThrow(() => byteMachine.step());
+  assert.doesNotThrow(() => byteMachine.step());
+  assert.equal(byteMachine.snapshot().registers[6], 0xffffff80);
+
+  for (const source of ["lh x5, 1(x10)", "sh x5, 1(x10)"]) {
+    const machine = new Rv32iMachine(source);
+    const before = machine.snapshot();
+    assert.throws(
+      () => machine.step(),
+      (error) =>
+        error instanceof Rv32iError && error.code === "MISALIGNED_HALF",
+    );
+    assert.deepEqual(machine.snapshot(), before);
+  }
 });
 
 test("rejects misaligned and out-of-bounds word access without mutation", () => {
@@ -216,6 +427,17 @@ lw x6, 0(x10)`);
   assert.match(summary, /레지스터 쓰기 2회/);
   assert.match(summary, /메모리 읽기 1회/);
   assert.match(summary, /메모리 쓰기 1회/);
+});
+
+test("Run summary announces uninitialized memory reads", () => {
+  const machine = new Rv32iMachine("lb x5, 0(x10)");
+  const summary = summarizeDeltaBatch(
+    [machine.step()],
+    machine.snapshot().pc,
+  );
+
+  assert.match(summary, /주의/);
+  assert.match(summary, /초기화되지 않은 메모리 0x00001000/);
 });
 
 test("controller stops an infinite branch at its instruction budget", () => {
@@ -432,4 +654,98 @@ test("controller rejects stale commands and keeps responses serializable", () =>
   if (final?.type === "ERROR") assert.equal(final.code, "STALE_RUN");
   assert.doesNotThrow(() => structuredClone(final));
   controller.dispose();
+});
+
+test("protocol guards validate nested commands and responses", () => {
+  assert.equal(
+    isWorkerCommand(
+      command("LOAD", {
+        source: "addi x5, x0, 1",
+        options: {
+          initialRegisters: { 5: 7 },
+          initialMemory: [{ address: DATA_BASE, bytes: [0x80] }],
+        },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    isWorkerCommand({
+      ...command("LOAD", { source: "addi x5, x0, 1" }),
+      options: { initialMemory: [{ address: DATA_BASE, bytes: [256] }] },
+    }),
+    false,
+  );
+
+  const responses: WorkerResponse[] = [];
+  const controller = new Rv32iWorkerController((response) =>
+    responses.push(response),
+  );
+  controller.handle(
+    command("LOAD", {
+      source: "addi x5, x0, 1",
+    }),
+  );
+  controller.handle(command("STEP"));
+
+  assert.ok(responses.every(isWorkerResponse));
+  const completed = responses.at(-1);
+  assert.equal(completed?.type, "STATE");
+  if (completed?.type === "STATE" && completed.delta) {
+    const malformed = structuredClone(completed) as unknown as {
+      delta: { warnings: unknown };
+    };
+    malformed.delta.warnings = [{ code: "OTHER", addresses: [], message: "" }];
+    assert.equal(isWorkerResponse(malformed), false);
+    const zeroSequence = { ...completed, seq: 0 };
+    assert.equal(isWorkerResponse(zeroSequence), false);
+    const stateError = {
+      ...completed,
+      status: "error",
+      snapshot: { ...completed.snapshot, status: "error" },
+    };
+    assert.equal(isWorkerResponse(stateError), false);
+  } else {
+    assert.fail("expected a completed state with a delta");
+  }
+});
+
+test("controller returns a correlated error for protocol mismatch", () => {
+  const responses: WorkerResponse[] = [];
+  const tasks = new Map<number, () => void>();
+  let taskId = 0;
+  const controller = new Rv32iWorkerController(
+    (response) => responses.push(response),
+    {
+      schedule: (callback) => {
+        taskId += 1;
+        tasks.set(taskId, callback);
+        return taskId as unknown as ReturnType<typeof setTimeout>;
+      },
+      cancel: (handle) => tasks.delete(handle as unknown as number),
+    },
+  );
+  controller.handle(
+    command("LOAD", { source: "loop: beq x0, x0, loop" }),
+  );
+  controller.handle(command("RUN"));
+  assert.equal(tasks.size, 1);
+
+  controller.reject({
+    protocolVersion: PROTOCOL_VERSION + 1,
+    runId: "run-version-mismatch",
+    commandId: "command-load",
+    type: "LOAD",
+    source: "addi x5, x0, 1",
+  });
+  assert.equal(tasks.size, 0);
+
+  const response = responses.at(-1);
+  assert.equal(response?.type, "ERROR");
+  if (response?.type === "ERROR") {
+    assert.equal(response.runId, "run-version-mismatch");
+    assert.equal(response.commandId, "command-load");
+    assert.equal(response.code, "PROTOCOL_VERSION");
+    assert.equal(isWorkerResponse(response), true);
+  }
 });

@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  WorkerCommand,
-  WorkerResponse,
+import {
+  isWorkerResponse,
+  type WorkerCommand,
+  type WorkerResponse,
 } from "../../lib/rv32i/protocol";
 import {
   PROTOCOL_VERSION,
@@ -22,6 +23,7 @@ export type Rv32iWorkerState = {
   snapshot: Snapshot | null;
   lastDelta: StepDelta | null;
   trace: StepDelta[];
+  programReady: boolean;
   error: string | null;
   announcement: string;
   step: () => void;
@@ -29,20 +31,24 @@ export type Rv32iWorkerState = {
   reset: () => void;
   run: () => void;
   pause: () => void;
+  retry: () => void;
 };
 
 export function useRv32iWorker(
   source: string,
-  options?: MachineOptions,
+  options: MachineOptions | undefined,
+  requestId: number,
 ): Rv32iWorkerState {
   const [status, setStatus] = useState<LabStatus>("loading");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [lastDelta, setLastDelta] = useState<StepDelta | null>(null);
   const [trace, setTrace] = useState<StepDelta[]>([]);
+  const [loadedRequestId, setLoadedRequestId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState(
     "RV32I 실험실을 준비하고 있습니다.",
   );
+  const [workerGeneration, setWorkerGeneration] = useState(0);
   const workerRef = useRef<Worker | null>(null);
   const runIdRef = useRef("");
   const commandSequenceRef = useRef(0);
@@ -50,12 +56,35 @@ export function useRv32iWorker(
   const runDeltasRef = useRef<StepDelta[]>([]);
   const runInProgressRef = useRef(false);
   const optionsKey = useMemo(() => JSON.stringify(options ?? {}), [options]);
+  const retry = useCallback(() => {
+    setLoadedRequestId(null);
+    setWorkerGeneration((generation) => generation + 1);
+  }, []);
 
   useEffect(() => {
-    const worker = new Worker(
-      new URL("../workers/rv32i.worker.ts", import.meta.url),
-      { type: "module", name: "rv32i-learning-machine" },
-    );
+    let disposed = false;
+    runDeltasRef.current = [];
+    runInProgressRef.current = false;
+
+    let worker: Worker;
+    try {
+      worker = new Worker(
+        new URL("../workers/rv32i.worker.ts", import.meta.url),
+        { type: "module", name: "rv32i-learning-machine" },
+      );
+    } catch {
+      queueMicrotask(() => {
+        if (disposed) return;
+        setStatus(() => "error");
+        setLoadedRequestId(null);
+        setError("실행 Worker를 시작하지 못했습니다. 다시 시도해 주세요.");
+        setAnnouncement("실행 Worker를 시작하지 못했습니다.");
+      });
+      return () => {
+        disposed = true;
+      };
+    }
+
     const runId = `lesson-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     workerRef.current = worker;
     runIdRef.current = runId;
@@ -64,10 +93,41 @@ export function useRv32iWorker(
     runDeltasRef.current = [];
     runInProgressRef.current = false;
 
-    worker.addEventListener("message", (event: MessageEvent<WorkerResponse>) => {
+    queueMicrotask(() => {
+      if (disposed || workerRef.current !== worker) return;
+      setStatus("loading");
+      setSnapshot(null);
+      setLastDelta(null);
+      setTrace([]);
+      setLoadedRequestId(null);
+      setError(null);
+      setAnnouncement("RV32I 실험실을 준비하고 있습니다.");
+    });
+
+    const failWorker = (message: string, announcementMessage: string) => {
+      if (workerRef.current !== worker) return;
+      workerRef.current = null;
+      worker.terminate();
+      runDeltasRef.current = [];
+      runInProgressRef.current = false;
+      setStatus(() => "error");
+      setLoadedRequestId(null);
+      setError(message);
+      setAnnouncement(announcementMessage);
+    };
+
+    worker.addEventListener("message", (event: MessageEvent<unknown>) => {
+      if (workerRef.current !== worker) return;
       const response = event.data;
+      if (!isWorkerResponse(response)) {
+        failWorker(
+          "실행 Worker가 올바르지 않은 응답을 보냈습니다. 다시 시도해 주세요.",
+          "실행 Worker 응답 형식이 올바르지 않습니다.",
+        );
+        return;
+      }
       if (
-        response.runId !== runIdRef.current ||
+        response.runId !== runId ||
         response.seq <= responseSequenceRef.current
       ) {
         return;
@@ -84,6 +144,7 @@ export function useRv32iWorker(
           setTrace((current) => appendTrace(current, committedDeltas));
         }
         if (response.snapshot) setSnapshot(response.snapshot);
+        if (!response.snapshot) setLoadedRequestId(null);
         setStatus("error");
         setError(response.message);
         setAnnouncement(summarizeError(response.message, fullRunDeltas));
@@ -94,6 +155,7 @@ export function useRv32iWorker(
 
       setStatus(response.status);
       setSnapshot(response.snapshot);
+      if (response.reason === "loaded") setLoadedRequestId(requestId);
       setError(null);
       if (response.delta) {
         setLastDelta(response.delta);
@@ -147,10 +209,19 @@ export function useRv32iWorker(
       setAnnouncement(summarizeResponse(response));
     });
 
-    worker.addEventListener("error", () => {
-      setStatus("error");
-      setError("실행 Worker를 시작하지 못했습니다. 페이지를 새로고침해 주세요.");
-      setAnnouncement("실행 Worker를 시작하지 못했습니다.");
+    worker.addEventListener("error", (event) => {
+      event.preventDefault();
+      failWorker(
+        "실행 Worker가 예기치 않게 중단되었습니다. 다시 시도해 주세요.",
+        "실행 Worker가 중단되었습니다. 다시 시도할 수 있습니다.",
+      );
+    });
+
+    worker.addEventListener("messageerror", () => {
+      failWorker(
+        "실행 Worker의 응답을 읽지 못했습니다. 다시 시도해 주세요.",
+        "실행 Worker 응답을 읽지 못했습니다. 다시 시도할 수 있습니다.",
+      );
     });
 
     const loadCommand: WorkerCommand = {
@@ -162,24 +233,44 @@ export function useRv32iWorker(
       options: JSON.parse(optionsKey) as MachineOptions,
     };
     commandSequenceRef.current = 1;
-    worker.postMessage(loadCommand);
+    try {
+      worker.postMessage(loadCommand);
+    } catch {
+      failWorker(
+        "실행 Worker에 프로그램을 전달하지 못했습니다. 다시 시도해 주세요.",
+        "프로그램을 실행 Worker에 전달하지 못했습니다.",
+      );
+    }
 
     return () => {
-      workerRef.current = null;
+      disposed = true;
+      if (workerRef.current === worker) workerRef.current = null;
       worker.terminate();
     };
-  }, [source, optionsKey]);
+  }, [source, optionsKey, requestId, workerGeneration]);
 
   const send = useCallback((type: Exclude<WorkerCommand["type"], "LOAD">) => {
     const worker = workerRef.current;
     if (!worker) return;
     const commandId = `command-${++commandSequenceRef.current}`;
-    worker.postMessage({
-      protocolVersion: PROTOCOL_VERSION,
-      runId: runIdRef.current,
-      commandId,
-      type,
-    } satisfies WorkerCommand);
+    try {
+      worker.postMessage({
+        protocolVersion: PROTOCOL_VERSION,
+        runId: runIdRef.current,
+        commandId,
+        type,
+      } satisfies WorkerCommand);
+    } catch {
+      if (workerRef.current !== worker) return;
+      workerRef.current = null;
+      worker.terminate();
+      runDeltasRef.current = [];
+      runInProgressRef.current = false;
+      setStatus("error");
+      setLoadedRequestId(null);
+      setError("실행 Worker에 명령을 전달하지 못했습니다. 다시 시도해 주세요.");
+      setAnnouncement("실행 Worker에 명령을 전달하지 못했습니다.");
+    }
   }, []);
 
   return {
@@ -187,6 +278,7 @@ export function useRv32iWorker(
     snapshot,
     lastDelta,
     trace,
+    programReady: loadedRequestId === requestId,
     error,
     announcement,
     step: useCallback(() => send("STEP"), [send]),
@@ -194,6 +286,7 @@ export function useRv32iWorker(
     reset: useCallback(() => send("RESET"), [send]),
     run: useCallback(() => send("RUN"), [send]),
     pause: useCallback(() => send("PAUSE"), [send]),
+    retry,
   };
 }
 
@@ -243,14 +336,18 @@ export function summarizeResponse(
     )
     .concat(
       delta.memoryPatches.map(
-        (patch) => `메모리 ${formatHex(patch.address)}에 4바이트를 썼습니다`,
+        (patch) =>
+          `메모리 ${formatHex(patch.address)}에 ${patch.after.length}바이트를 썼습니다`,
       ),
     );
   const suffix = changes.length
     ? changes.join(". ")
     : "레지스터와 메모리에 쓴 값은 없습니다";
+  const warning = delta.warnings.length
+    ? ` 주의. ${delta.warnings.map((item) => item.message).join(" ")}`
+    : "";
   const completion = response.status === "completed" ? " 프로그램 실행 완료." : "";
-  return `PC ${formatHex(delta.pcAfter)}. ${suffix}.${completion}`;
+  return `PC ${formatHex(delta.pcAfter)}. ${suffix}.${warning}${completion}`;
 }
 
 export function summarizeDeltaBatch(
@@ -272,7 +369,19 @@ export function summarizeDeltaBatch(
     (count, delta) => count + delta.memoryPatches.length,
     0,
   );
-  return `${deltas.length}개 명령어를 실행했습니다. 레지스터 쓰기 ${registerWrites}회, 메모리 읽기 ${memoryReads}회, 메모리 쓰기 ${memoryWrites}회. 현재 PC ${formatHex(pc)}.`;
+  const uninitializedAddresses = [
+    ...new Set(
+      deltas.flatMap((delta) =>
+        delta.warnings.flatMap((warning) => warning.addresses),
+      ),
+    ),
+  ];
+  const warningSummary = uninitializedAddresses.length
+    ? ` 주의. 초기화되지 않은 메모리 ${uninitializedAddresses
+        .map((address) => formatHex(address))
+        .join(", ")}를 읽었습니다.`
+    : "";
+  return `${deltas.length}개 명령어를 실행했습니다. 레지스터 쓰기 ${registerWrites}회, 메모리 읽기 ${memoryReads}회, 메모리 쓰기 ${memoryWrites}회. 현재 PC ${formatHex(pc)}.${warningSummary}`;
 }
 
 function summarizeError(

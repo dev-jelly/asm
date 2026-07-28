@@ -1,12 +1,14 @@
 import { formatHex } from "../../lib/rv32i/memory";
 import type { Snapshot, StepDelta } from "../../lib/rv32i/types";
+import { MemoryVisualizer } from "./MemoryVisualizer";
 
-const RELEVANT_REGISTERS = [0, 5, 6, 7, 10] as const;
+const RELEVANT_REGISTERS = [0, 5, 6, 7, 8, 10] as const;
 const ABI_NAMES: Record<number, string> = {
   0: "zero",
   5: "t0",
   6: "t1",
   7: "t2",
+  8: "s0",
   10: "a0",
 };
 
@@ -22,8 +24,6 @@ export function MachineStateView({
   const registerWrites = new Map(
     lastDelta?.registerWrites.map((write) => [write.register, write]) ?? [],
   );
-  const memoryAccess = lastDelta?.memoryAccesses.at(-1);
-  const displayedMemory = snapshot.memory.slice(0, 8);
   const encoding =
     snapshot.currentInstruction?.encoding ?? lastDelta?.instruction.encoding;
 
@@ -111,60 +111,7 @@ export function MachineStateView({
           </div>
         </section>
 
-        <section aria-labelledby="memory-title">
-          <div className="section-heading-row">
-            <h3 id="memory-title">메모리</h3>
-            <span>바이트 주소 · 하위 바이트 우선</span>
-          </div>
-          <div
-            className="table-scroll"
-            role="region"
-            tabIndex={0}
-            aria-labelledby="memory-title"
-          >
-            <table>
-              <caption className="sr-only">
-                주소 0x1000부터의 메모리 byte와 최근 접근
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">주소</th>
-                  <th scope="col">바이트</th>
-                  <th scope="col">최근 상태</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayedMemory.map((byte, offset) => {
-                  const address = snapshot.memoryBase + offset;
-                  const accessed =
-                    memoryAccess &&
-                    address >= memoryAccess.address &&
-                    address < memoryAccess.address + memoryAccess.size;
-                  return (
-                    <tr
-                      key={address}
-                      data-change={accessed ? memoryAccess.kind : undefined}
-                    >
-                      <th scope="row">
-                        <code>{formatHex(address)}</code>
-                      </th>
-                      <td>
-                        <code>{byte.toString(16).padStart(2, "0")}</code>
-                      </td>
-                      <td>
-                        {accessed
-                          ? memoryAccess.kind === "read"
-                            ? "읽기"
-                            : "쓰기"
-                          : "변화 없음"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <MemoryVisualizer snapshot={snapshot} lastDelta={lastDelta} />
       </div>
 
       <section className="delta-view" aria-labelledby="delta-title">
@@ -219,6 +166,12 @@ export function MachineStateView({
                   다음 PC {formatHex(lastDelta.pcAfter)}
                 </li>
               ) : null}
+              {lastDelta.warnings.map((warning) => (
+                <li key={`${warning.code}-${warning.addresses.join("-")}`}>
+                  <strong className="warning-text">주의:</strong>{" "}
+                  {warning.message}
+                </li>
+              ))}
             </ul>
             {lastDelta.addressCalculation ? (
               <p className="address-calculation">

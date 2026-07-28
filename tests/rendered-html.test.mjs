@@ -28,9 +28,11 @@ test("server-renders the Korean product home and real learning interaction", asy
   const html = await response.text();
   assert.match(html, /<html[^>]*lang="ko"/i);
   assert.match(html, /<title>ASM LAB \| 상태 변화로 배우는 RV32I<\/title>/i);
-  assert.match(html, /실행 전에 다음 상태를 예측하세요/);
+  assert.match(html, /메모리는 바이트 단위로 움직입니다/);
   assert.equal(html.match(/<h1\b/gi)?.length, 1);
   assert.match(html, /addi x5, x0, 7/);
+  assert.match(html, /부호 확장/);
+  assert.match(html, /코드 직접 편집/);
   assert.match(html, /다음 Step에서 가장 중요한 변화/);
   assert.match(html, /잘 모르겠어요\. 결과 보기/);
   assert.match(html, /로그인 없이 시작/);
@@ -66,6 +68,8 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   const [
     lab,
     stateView,
+    memoryVisualizer,
+    timeline,
     hook,
     controls,
     predictionGate,
@@ -80,6 +84,14 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
       readFile(new URL("../app/components/LearningLab.tsx", import.meta.url), "utf8"),
       readFile(
         new URL("../app/components/MachineStateView.tsx", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../app/components/MemoryVisualizer.tsx", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../app/components/ExecutionTimeline.tsx", import.meta.url),
         "utf8",
       ),
       readFile(new URL("../app/hooks/useRv32iWorker.ts", import.meta.url), "utf8"),
@@ -109,12 +121,21 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   assert.match(stateView, />PC</);
   assert.match(stateView, /현재 인코딩/);
   assert.match(stateView, />레지스터</);
-  assert.match(stateView, />메모리</);
+  assert.match(stateView, /<MemoryVisualizer/);
   assert.match(stateView, /상태 변화/);
-  assert.equal(stateView.match(/role="region"/g)?.length, 2);
-  assert.equal(stateView.match(/tabIndex=\{0\}/g)?.length, 2);
+  assert.equal(stateView.match(/role="region"/g)?.length, 1);
+  assert.equal(stateView.match(/tabIndex=\{0\}/g)?.length, 1);
   assert.match(stateView, /aria-labelledby="register-title"/);
-  assert.match(stateView, /aria-labelledby="memory-title"/);
+  assert.match(memoryVisualizer, /메모리 지도/);
+  assert.match(memoryVisualizer, /memoryInitialized/);
+  assert.match(memoryVisualizer, /data-unit-size/);
+  assert.match(memoryVisualizer, /role="group"/);
+  assert.match(memoryVisualizer, /aria-invalid/);
+  assert.match(memoryVisualizer, /ArrowRight/);
+  assert.match(memoryVisualizer, /Home/);
+  assert.match(memoryVisualizer, /littleEndianExplanation/);
+  assert.match(timeline, /aria-pressed/);
+  assert.match(timeline, /실행 기록/);
 
   assert.equal(lab.match(/aria-live="polite"/g)?.length, 1);
   assert.match(lab, /stepIndex: currentStepIndex/);
@@ -127,11 +148,19 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   );
   assert.ok(
     lab.indexOf("lab.error ?") <
-      lab.indexOf('lab.status === "loading" || !lab.snapshot'),
+      lab.indexOf('visibleStatus === "loading" || !visibleSnapshot'),
   );
+  assert.match(lab, /lab\.programReady/);
+  assert.match(lab, /setProgramRequestId/);
+  assert.match(lab, /source === selectedPreset\.source/);
 
   assert.match(hook, /new Worker/);
   assert.match(hook, /worker\.terminate\(\)/);
+  assert.match(hook, /messageerror/);
+  assert.match(hook, /isWorkerResponse/);
+  assert.match(hook, /setLoadedRequestId\(requestId\)/);
+  assert.match(hook, /workerRef\.current !== worker/);
+  assert.match(hook, /retry/);
   assert.match(hook, /appendTrace\(current, committedDeltas\)/);
   assert.match(hook, /if \(response\.reason === "run-chunk"\) return/);
   assert.match(hook, /summarizeDeltaBatch/);
@@ -152,7 +181,7 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
 
   assert.match(predictionGate, /aria-describedby="prediction-help"/);
   assert.doesNotMatch(predictionGate, /aria-pressed/);
-  assert.match(predictionGate, /메모리 주소에 4바이트를 씁니다/);
+  assert.match(predictionGate, /메모리 주소에 값을 씁니다/);
   assert.match(predictionGate, /PC만 다음 명령어로 이동합니다/);
   assert.match(predictionGate, /잘 모르겠어요\. 결과 보기/);
 
@@ -171,7 +200,10 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   assert.match(css, /--border-strong:\s*#858178/);
   assert.match(css, /\.site-footer a[\s\S]*min-height:\s*44px/);
   assert.match(css, /grid-template-areas:[\s\S]*"source state"[\s\S]*"controls state"/);
-  assert.match(css, /\.lab-controls \{[\s\S]*position:\s*sticky/);
+  assert.match(
+    css,
+    /@media \(max-width:\s*760px\)[\s\S]*\.lab-controls \{[\s\S]*position:\s*static/,
+  );
   assert.doesNotMatch(css, /#fff(?:fff)?\b/i);
 
   assert.match(layout, /<html lang="ko">/);
@@ -189,6 +221,8 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
     page,
     lab,
     stateView,
+    memoryVisualizer,
+    timeline,
     controls,
     predictionGate,
     addressLesson,

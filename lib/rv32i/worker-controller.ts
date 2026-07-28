@@ -38,7 +38,7 @@ export class Rv32iWorkerController {
     this.instructionBudget = options.instructionBudget ?? 512;
     this.schedule =
       options.schedule ?? ((callback) => setTimeout(callback, 0));
-    this.cancel = options.cancel ?? clearTimeout;
+    this.cancel = options.cancel ?? ((handle) => clearTimeout(handle));
   }
 
   handle(command: WorkerCommand): void {
@@ -123,6 +123,34 @@ export class Rv32iWorkerController {
     this.runInstructionCount = 0;
     this.emitState(command, "running", "run-started");
     this.timer = this.schedule(() => this.runChunk(command));
+  }
+
+  reject(value: unknown): void {
+    if (!isMessageEnvelope(value)) return;
+    this.stopRun();
+    const code =
+      value.protocolVersion === PROTOCOL_VERSION
+        ? "INVALID_COMMAND"
+        : "PROTOCOL_VERSION";
+    const message =
+      code === "PROTOCOL_VERSION"
+        ? "지원하지 않는 protocol version입니다."
+        : "Worker 명령 형식이 올바르지 않습니다.";
+    const response: WorkerErrorResponse = {
+      protocolVersion: PROTOCOL_VERSION,
+      runId: value.runId,
+      commandId: value.commandId,
+      seq: ++this.responseSequence,
+      type: "ERROR",
+      status: "error",
+      code,
+      message,
+      snapshot:
+        this.machine && value.runId === this.activeRunId
+          ? { ...this.machine.snapshot(), status: "error" }
+          : undefined,
+    };
+    this.emit(response);
   }
 
   dispose(): void {
@@ -220,4 +248,23 @@ export class Rv32iWorkerController {
     };
     this.emit(response);
   }
+}
+
+function isMessageEnvelope(
+  value: unknown,
+): value is {
+  protocolVersion?: unknown;
+  runId: string;
+  commandId: string;
+} {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.runId === "string" &&
+    record.runId.trim().length > 0 &&
+    typeof record.commandId === "string" &&
+    record.commandId.trim().length > 0
+  );
 }

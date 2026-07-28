@@ -1,15 +1,60 @@
-import { ByteMemory } from "./memory";
+import { ByteMemory, formatHex } from "./memory";
 import { parseProgram } from "./parser";
 import {
   DATA_BASE,
   DEFAULT_HISTORY_LIMIT,
+  type Instruction,
+  type LoadInstruction,
+  type LoadMnemonic,
   MAX_HISTORY_LIMIT,
+  type MemoryAccessSize,
   type MachineOptions,
   type Program,
   Rv32iError,
   type Snapshot,
   type StepDelta,
+  type StoreInstruction,
+  type StoreMnemonic,
 } from "./types";
+
+const LOAD_SEMANTICS: Record<
+  LoadMnemonic,
+  { size: MemoryAccessSize; signed: boolean }
+> = {
+  lb: { size: 1, signed: true },
+  lbu: { size: 1, signed: false },
+  lh: { size: 2, signed: true },
+  lhu: { size: 2, signed: false },
+  lw: { size: 4, signed: false },
+};
+
+const STORE_SIZES: Record<StoreMnemonic, MemoryAccessSize> = {
+  sb: 1,
+  sh: 2,
+  sw: 4,
+};
+
+function isLoadInstruction(
+  instruction: Instruction,
+): instruction is LoadInstruction {
+  return Object.hasOwn(LOAD_SEMANTICS, instruction.mnemonic);
+}
+
+function isStoreInstruction(
+  instruction: Instruction,
+): instruction is StoreInstruction {
+  return Object.hasOwn(STORE_SIZES, instruction.mnemonic);
+}
+
+function extendLoadedValue(
+  value: number,
+  size: MemoryAccessSize,
+  signed: boolean,
+): number {
+  if (!signed || size === 4) return value >>> 0;
+  const shift = size === 1 ? 24 : 16;
+  return ((value << shift) >> shift) >>> 0;
+}
 
 export class Rv32iMachine {
   readonly program: Program;
@@ -21,6 +66,7 @@ export class Rv32iMachine {
   private readonly history: StepDelta[] = [];
   private readonly initialRegisters: number[];
   private readonly initialMemory: number[];
+  private readonly initialMemoryInitialized: boolean[];
   private readonly historyLimit: number;
   private pc = 0;
   private stepIndex = 0;
@@ -64,6 +110,7 @@ export class Rv32iMachine {
     this.registers[0] = 0;
     this.initialRegisters = Array.from(this.registers);
     this.initialMemory = this.memory.toArray();
+    this.initialMemoryInitialized = this.memory.initializedToArray();
     this.status = this.program.instructions.length === 0 ? "completed" : "ready";
   }
 
@@ -96,6 +143,7 @@ export class Rv32iMachine {
       registerWrites: [],
       memoryAccesses: [],
       memoryPatches: [],
+      warnings: [],
       controlFlow: { kind: "sequential" },
     };
 
@@ -125,11 +173,17 @@ export class Rv32iMachine {
       const [rd, rs1, immediate] = instruction.operands;
       const source = readRegister(rs1.index, "rs1");
       writeRegister(rd.index, (source + immediate.value) >>> 0);
-    } else if (instruction.mnemonic === "lw") {
+    } else if (isLoadInstruction(instruction)) {
       const [rd, memoryOperand] = instruction.operands;
       const baseValue = readRegister(memoryOperand.base, "address");
       const effectiveAddress = (baseValue + memoryOperand.offset) >>> 0;
-      const word = this.memory.readWord(effectiveAddress);
+      const semantics = LOAD_SEMANTICS[instruction.mnemonic];
+      const read = this.memory.read(effectiveAddress, semantics.size);
+      const value = extendLoadedValue(
+        read.value,
+        semantics.size,
+        semantics.signed,
+      );
       delta.addressCalculation = {
         baseRegister: memoryOperand.base,
         baseValue,
@@ -139,20 +193,44 @@ export class Rv32iMachine {
       delta.memoryAccesses.push({
         kind: "read",
         address: effectiveAddress,
-        size: 4,
-        bytes: word.bytes,
-        value: word.value,
+        size: semantics.size,
+        bytes: read.bytes,
+        initialized: read.initialized,
+        value,
       });
-      writeRegister(rd.index, word.value);
-    } else if (instruction.mnemonic === "sw") {
+      const uninitializedAddresses = read.initialized.flatMap(
+        (initialized, index) =>
+          initialized ? [] : [effectiveAddress + index],
+      );
+      if (uninitializedAddresses.length) {
+        delta.warnings.push({
+          code: "UNINITIALIZED_READ",
+          addresses: uninitializedAddresses,
+          message: `초기화되지 않은 메모리 ${uninitializedAddresses
+            .map((address) => formatHex(address))
+            .join(", ")}를 읽었습니다. 표시된 0은 backing byte일 뿐, 초기값으로 가정하면 안 됩니다.`,
+        });
+      }
+      writeRegister(rd.index, value);
+    } else if (isStoreInstruction(instruction)) {
       const [rs2, memoryOperand] = instruction.operands;
       const value = readRegister(rs2.index, "rs2");
       const baseValue = readRegister(memoryOperand.base, "address");
       const effectiveAddress = (baseValue + memoryOperand.offset) >>> 0;
-      this.memory.validateWordWrite(effectiveAddress);
-      const before = this.memory.readBytes(effectiveAddress, 4);
-      const after = this.memory.wordBytes(value);
-      this.memory.writeBytes(effectiveAddress, after);
+      const size = STORE_SIZES[instruction.mnemonic];
+      this.memory.validateAccess(effectiveAddress, size);
+      const before = this.memory.readBytes(effectiveAddress, size);
+      const initializedBefore = this.memory.readInitialized(
+        effectiveAddress,
+        size,
+      );
+      const after = this.memory.valueBytes(value, size);
+      const initializedAfter = after.map(() => true);
+      this.memory.writeBytes(
+        effectiveAddress,
+        after,
+        initializedAfter,
+      );
       delta.addressCalculation = {
         baseRegister: memoryOperand.base,
         baseValue,
@@ -162,11 +240,21 @@ export class Rv32iMachine {
       delta.memoryAccesses.push({
         kind: "write",
         address: effectiveAddress,
-        size: 4,
+        size,
         bytes: after,
-        value,
+        initialized: initializedAfter,
+        value: after.reduce(
+          (result, byte, index) => result | (byte << (index * 8)),
+          0,
+        ) >>> 0,
       });
-      delta.memoryPatches.push({ address: effectiveAddress, before, after });
+      delta.memoryPatches.push({
+        address: effectiveAddress,
+        before,
+        after,
+        initializedBefore,
+        initializedAfter,
+      });
     } else {
       const [rs1, rs2, label] = instruction.operands;
       const lhs = readRegister(rs1.index, "rs1");
@@ -198,7 +286,11 @@ export class Rv32iMachine {
     if (!delta) return null;
 
     [...delta.memoryPatches].reverse().forEach((patch) => {
-      this.memory.writeBytes(patch.address, patch.before);
+      this.memory.writeBytes(
+        patch.address,
+        patch.before,
+        patch.initializedBefore ?? patch.before.map(() => false),
+      );
     });
     [...delta.registerWrites].reverse().forEach((write) => {
       if (write.committed) this.registers[write.register] = write.before >>> 0;
@@ -213,14 +305,17 @@ export class Rv32iMachine {
   reset(): void {
     this.registers.set(this.initialRegisters);
     this.registers[0] = 0;
-    this.memory.restore(this.initialMemory);
+    this.memory.restore(
+      this.initialMemory,
+      this.initialMemoryInitialized,
+    );
     this.history.length = 0;
     this.pc = 0;
     this.stepIndex = 0;
     this.status = this.program.instructions.length === 0 ? "completed" : "ready";
   }
 
-  snapshot(): Snapshot {
+  snapshot(): Snapshot & { status: "ready" | "completed" } {
     const current = this.instructionByAddress.get(this.pc);
     return {
       profile: "rv32i-edu-v1",
@@ -228,6 +323,7 @@ export class Rv32iMachine {
       registers: Array.from(this.registers, (value) => value >>> 0),
       memoryBase: this.memory.base,
       memory: this.memory.toArray(),
+      memoryInitialized: this.memory.initializedToArray(),
       status: this.status,
       stepIndex: this.stepIndex,
       historyDepth: this.history.length,

@@ -53,4 +53,15 @@
 
 ## 현재 상태
 
-이 문서 세트는 구현 전 기준선이다. 애플리케이션 코드, 패키지 구성, 데이터베이스, 배포 설정은 아직 만들지 않았다. 다음 작업은 `IMPLEMENTATION_PLAN.md`의 “Tracer-bullet 0”에 정의된 교육용 기계 계약과 4개 명령 세로형 프로토타입을 구현하는 것이다.
+`IMPLEMENTATION_PLAN.md`의 “Tracer-bullet 0”에 해당하는 첫 세로형
+프로토타입이 구현되어 GitHub Pages에 배포되어 있다. 현재 애플리케이션은
+`addi`, 폭·부호별 load, 폭별 store, `beq` 실행,
+Step·Back·Reset·Run·Pause, 상태 변화와 바이트 메모리 관찰, 주소와 값
+비교 레슨, 직접 소스 편집, 실행 기록, 로컬 진도 내보내기를 제공한다.
+실행은 브라우저의 Dedicated Worker
+안에서 이루어지며 서버 데이터베이스나 계정 시스템을 사용하지 않는다.
+
+다음 구현 단계는 계획의 Tracer-bullet 2 이후 범위인
+breakpoint·checkpoint/seek, 함수·스택·ABI 레슨과 전체 학습 콘텐츠
+확장이다. 현재 배포 구성은 `main` 푸시를 검증한 뒤 정적 산출물을
+[GitHub Pages](https://dev-jelly.github.io/asm/)에 게시한다.

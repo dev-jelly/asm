@@ -11,6 +11,8 @@ const controller = new Rv32iWorkerController((response) => {
 workerScope.addEventListener("message", (event: MessageEvent<unknown>) => {
   if (isWorkerCommand(event.data)) {
     controller.handle(event.data);
+  } else {
+    controller.reject(event.data);
   }
 });
 

@@ -4,7 +4,10 @@ export const PROTOCOL_VERSION = 1 as const;
 export const DEFAULT_HISTORY_LIMIT = 256;
 export const MAX_HISTORY_LIMIT = 4096;
 
-export type Mnemonic = "addi" | "lw" | "sw" | "beq";
+export type LoadMnemonic = "lb" | "lbu" | "lh" | "lhu" | "lw";
+export type StoreMnemonic = "sb" | "sh" | "sw";
+export type Mnemonic = "addi" | LoadMnemonic | StoreMnemonic | "beq";
+export type MemoryAccessSize = 1 | 2 | 4;
 
 export type RegisterOperand = {
   kind: "register";
@@ -28,6 +31,24 @@ export type MemoryOperand = {
   offset: number;
 };
 
+export type LoadInstruction = {
+  mnemonic: LoadMnemonic;
+  operands: [RegisterOperand, MemoryOperand];
+  address: number;
+  encoding: number;
+  sourceLine: number;
+  sourceText: string;
+};
+
+export type StoreInstruction = {
+  mnemonic: StoreMnemonic;
+  operands: [RegisterOperand, MemoryOperand];
+  address: number;
+  encoding: number;
+  sourceLine: number;
+  sourceText: string;
+};
+
 export type Instruction =
   | {
       mnemonic: "addi";
@@ -37,22 +58,8 @@ export type Instruction =
       sourceLine: number;
       sourceText: string;
     }
-  | {
-      mnemonic: "lw";
-      operands: [RegisterOperand, MemoryOperand];
-      address: number;
-      encoding: number;
-      sourceLine: number;
-      sourceText: string;
-    }
-  | {
-      mnemonic: "sw";
-      operands: [RegisterOperand, MemoryOperand];
-      address: number;
-      encoding: number;
-      sourceLine: number;
-      sourceText: string;
-    }
+  | LoadInstruction
+  | StoreInstruction
   | {
       mnemonic: "beq";
       operands: [RegisterOperand, RegisterOperand, LabelOperand];
@@ -92,8 +99,9 @@ export type RegisterWrite = {
 export type MemoryAccess = {
   kind: "read" | "write";
   address: number;
-  size: 4;
+  size: MemoryAccessSize;
   bytes: number[];
+  initialized?: boolean[];
   value: number;
 };
 
@@ -101,6 +109,8 @@ export type MemoryPatch = {
   address: number;
   before: number[];
   after: number[];
+  initializedBefore?: boolean[];
+  initializedAfter?: boolean[];
 };
 
 export type AddressCalculation = {
@@ -116,6 +126,12 @@ export type ControlFlow = {
   target?: number;
   lhs?: number;
   rhs?: number;
+};
+
+export type StepWarning = {
+  code: "UNINITIALIZED_READ";
+  message: string;
+  addresses: number[];
 };
 
 export type StepDelta = {
@@ -135,6 +151,7 @@ export type StepDelta = {
   registerWrites: RegisterWrite[];
   memoryAccesses: MemoryAccess[];
   memoryPatches: MemoryPatch[];
+  warnings: StepWarning[];
   addressCalculation?: AddressCalculation;
   controlFlow: ControlFlow;
 };
@@ -153,6 +170,7 @@ export type Snapshot = {
   registers: number[];
   memoryBase: number;
   memory: number[];
+  memoryInitialized: boolean[];
   status: MachineStatus;
   stepIndex: number;
   historyDepth: number;

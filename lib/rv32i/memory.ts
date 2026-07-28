@@ -1,14 +1,21 @@
-import { DATA_BASE, DATA_SIZE, Rv32iError } from "./types";
+import {
+  DATA_BASE,
+  DATA_SIZE,
+  type MemoryAccessSize,
+  Rv32iError,
+} from "./types";
 
 export class ByteMemory {
   readonly base: number;
   readonly size: number;
   private readonly bytes: Uint8Array;
+  private readonly initialized: Uint8Array;
 
   constructor(base = DATA_BASE, size = DATA_SIZE) {
     this.base = base >>> 0;
     this.size = size;
     this.bytes = new Uint8Array(size);
+    this.initialized = new Uint8Array(size);
   }
 
   private index(address: number, size: number): number {
@@ -33,60 +40,98 @@ export class ByteMemory {
     return Array.from(this.bytes.slice(start, start + size));
   }
 
-  writeBytes(address: number, values: readonly number[]): void {
+  readInitialized(address: number, size: number): boolean[] {
+    const start = this.index(address, size);
+    return Array.from(
+      this.initialized.slice(start, start + size),
+      (value) => value !== 0,
+    );
+  }
+
+  writeBytes(
+    address: number,
+    values: readonly number[],
+    initialized: readonly boolean[] = values.map(() => true),
+  ): void {
+    if (initialized.length !== values.length) {
+      throw new Rv32iError(
+        "MEMORY_SHADOW",
+        "메모리 byte와 initialized shadow의 길이가 다릅니다.",
+      );
+    }
     const start = this.index(address, values.length);
     const normalized = values.map((value) => value & 0xff);
     this.bytes.set(normalized, start);
+    this.initialized.set(
+      initialized.map((value) => (value ? 1 : 0)),
+      start,
+    );
   }
 
-  readWord(address: number): { value: number; bytes: number[] } {
-    this.assertWordAlignment(address);
-    const bytes = this.readBytes(address, 4);
-    const value =
-      (bytes[0] |
-        (bytes[1] << 8) |
-        (bytes[2] << 16) |
-        (bytes[3] << 24)) >>>
-      0;
-    return { value, bytes };
+  read(
+    address: number,
+    size: MemoryAccessSize,
+  ): { value: number; bytes: number[]; initialized: boolean[] } {
+    this.validateAccess(address, size);
+    const bytes = this.readBytes(address, size);
+    let value = 0;
+    bytes.forEach((byte, index) => {
+      value = (value | (byte << (index * 8))) >>> 0;
+    });
+    return {
+      value: value >>> 0,
+      bytes,
+      initialized: this.readInitialized(address, size),
+    };
   }
 
-  wordBytes(value: number): number[] {
+  valueBytes(value: number, size: MemoryAccessSize): number[] {
     const normalized = value >>> 0;
-    return [
-      normalized & 0xff,
-      (normalized >>> 8) & 0xff,
-      (normalized >>> 16) & 0xff,
-      (normalized >>> 24) & 0xff,
-    ];
+    return Array.from(
+      { length: size },
+      (_, index) => (normalized >>> (index * 8)) & 0xff,
+    );
   }
 
-  validateWordWrite(address: number): void {
-    this.assertWordAlignment(address);
-    this.index(address, 4);
+  validateAccess(address: number, size: MemoryAccessSize): void {
+    this.assertAlignment(address, size);
+    this.index(address, size);
   }
 
-  private assertWordAlignment(address: number): void {
-    if ((address >>> 0) % 4 !== 0) {
+  private assertAlignment(address: number, size: MemoryAccessSize): void {
+    if (size === 1 || (address >>> 0) % size === 0) return;
+    if (size === 4) {
       throw new Rv32iError(
         "MISALIGNED_WORD",
         `주소 ${formatHex(address)}는 4바이트 word 경계에 정렬되지 않았습니다.`,
       );
     }
+    throw new Rv32iError(
+      "MISALIGNED_HALF",
+      `주소 ${formatHex(address)}는 2바이트 halfword 경계에 정렬되지 않았습니다.`,
+    );
   }
 
   toArray(): number[] {
     return Array.from(this.bytes);
   }
 
-  restore(values: readonly number[]): void {
-    if (values.length !== this.size) {
+  initializedToArray(): boolean[] {
+    return Array.from(this.initialized, (value) => value !== 0);
+  }
+
+  restore(
+    values: readonly number[],
+    initialized: readonly boolean[],
+  ): void {
+    if (values.length !== this.size || initialized.length !== this.size) {
       throw new Rv32iError(
         "MEMORY_SNAPSHOT",
-        "메모리 스냅샷 크기가 교육용 데이터 영역과 다릅니다.",
+        "메모리 또는 initialized shadow 스냅샷 크기가 교육용 데이터 영역과 다릅니다.",
       );
     }
     this.bytes.set(values);
+    this.initialized.set(initialized.map((value) => (value ? 1 : 0)));
   }
 }
 

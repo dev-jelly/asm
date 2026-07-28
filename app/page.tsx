@@ -76,7 +76,7 @@ export default function Home() {
                 <h3>레지스터와 32비트 산술</h3>
                 <p>x0의 고정값과 32비트 범위를 넘는 계산 결과를 확인합니다.</p>
               </div>
-              <strong>다음 경로</strong>
+              <strong>기초 구현</strong>
             </li>
             <li>
               <span className="path-marker" aria-hidden="true">
@@ -86,7 +86,7 @@ export default function Home() {
                 <h3>주소와 메모리</h3>
                 <p>유효 주소, 바이트 순서, load와 store의 차이를 구분합니다.</p>
               </div>
-              <strong>현재 경로</strong>
+              <strong>집중 구현</strong>
             </li>
             <li>
               <span className="path-marker" aria-hidden="true">
@@ -96,7 +96,7 @@ export default function Home() {
                 <h3>분기와 반복</h3>
                 <p>비교 결과와 다음 PC를 예측해 실행 흐름을 추적합니다.</p>
               </div>
-              <strong>현재 경로</strong>
+              <strong>기초 구현</strong>
             </li>
           </ol>
         </section>
@@ -107,10 +107,10 @@ export default function Home() {
 
         <section className="content-section reference-section" id="reference" aria-labelledby="reference-title">
           <div className="section-lead">
-            <h2 id="reference-title">이 실험실이 지원하는 네 가지 명령어.</h2>
+            <h2 id="reference-title">폭과 부호가 다른 열 가지 명령어.</h2>
             <p>
-              첫 실습은 RV32I 전체가 아닌 교육용 명령어 네 개를 사용합니다.
-              명령어의 표준 의미와 이 실험실의 실행 정책을 구분해 표시합니다.
+              산술과 분기, 1, 2, 4바이트 메모리 접근을 한 실행 모델에서
+              비교합니다. 모든 load와 store는 범위와 정렬을 검사합니다.
             </p>
           </div>
           <div
@@ -144,6 +144,26 @@ export default function Home() {
                 </tr>
                 <tr>
                   <th scope="row">
+                    <code>lb / lbu</code>
+                  </th>
+                  <td>
+                    <code>lb rd, offset(rs1)</code>
+                  </td>
+                  <td>rs1, 메모리 1바이트</td>
+                  <td>rd, 부호 확장 또는 0 확장</td>
+                </tr>
+                <tr>
+                  <th scope="row">
+                    <code>lh / lhu</code>
+                  </th>
+                  <td>
+                    <code>lh rd, offset(rs1)</code>
+                  </td>
+                  <td>rs1, 메모리 2바이트</td>
+                  <td>rd, 부호 확장 또는 0 확장</td>
+                </tr>
+                <tr>
+                  <th scope="row">
                     <code>lw</code>
                   </th>
                   <td>
@@ -151,6 +171,26 @@ export default function Home() {
                   </td>
                   <td>rs1, 메모리 4바이트</td>
                   <td>rd</td>
+                </tr>
+                <tr>
+                  <th scope="row">
+                    <code>sb</code>
+                  </th>
+                  <td>
+                    <code>sb rs2, offset(rs1)</code>
+                  </td>
+                  <td>rs1, rs2의 하위 1바이트</td>
+                  <td>메모리 1바이트</td>
+                </tr>
+                <tr>
+                  <th scope="row">
+                    <code>sh</code>
+                  </th>
+                  <td>
+                    <code>sh rs2, offset(rs1)</code>
+                  </td>
+                  <td>rs1, rs2의 하위 2바이트</td>
+                  <td>메모리 2바이트</td>
                 </tr>
                 <tr>
                   <th scope="row">
@@ -177,9 +217,9 @@ export default function Home() {
           </div>
           <p className="scope-note">
             <strong>실험실 실행 정책:</strong> 데이터 메모리는{" "}
-            <code>0x00001000</code>부터 4 KiB이며, <code>lw</code>와{" "}
-            <code>sw</code>는 4바이트 정렬을 요구합니다. 32비트 워드는 낮은
-            주소부터 하위 바이트를 읽고 씁니다.
+            <code>0x00001000</code>부터 4 KiB입니다. halfword는 2바이트,
+            word는 4바이트 정렬을 요구합니다. 여러 바이트 값은 낮은 주소부터
+            하위 바이트를 읽고 쓰며, 초기화되지 않은 byte도 별도로 표시합니다.
           </p>
         </section>
 
@@ -190,8 +230,8 @@ export default function Home() {
 
       <footer className="site-footer">
         <p>
-          ASM LAB은 RV32I 명령어 네 개로 상태 변화를 가르치는 학습
-          실험실입니다.
+          ASM LAB은 RV32I의 주소 계산과 메모리 상태 변화를 가르치는
+          브라우저 학습 실험실입니다.
         </p>
         <div>
           <a href="#learn">학습 경로</a>

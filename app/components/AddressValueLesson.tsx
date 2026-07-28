@@ -17,12 +17,15 @@ const OPTIONS: MachineOptions = {
 
 export function AddressValueLesson() {
   const options = useMemo(() => OPTIONS, []);
-  const lab = useRv32iWorker(SOURCE, options);
+  const lab = useRv32iWorker(SOURCE, options, 0);
+  const programReady = lab.programReady;
+  const status = lab.error ? "error" : programReady ? lab.status : "loading";
+  const snapshot = programReady ? lab.snapshot : null;
   const [prediction, setPrediction] = useState("");
   const [submittedPrediction, setSubmittedPrediction] = useState<string | null>(
     null,
   );
-  const revealed = lab.status === "completed";
+  const revealed = status === "completed";
 
   useEffect(() => {
     if (revealed) markLocalProgress("address-versus-value");
@@ -63,8 +66,8 @@ export function AddressValueLesson() {
       <div className="address-activity">
         <fieldset
           disabled={
-            lab.status === "loading" ||
-            lab.status === "running" ||
+            status === "loading" ||
+            status === "running" ||
             revealed ||
             submittedPrediction !== null
           }
@@ -113,10 +116,10 @@ export function AddressValueLesson() {
             disabled={
               !prediction ||
               submittedPrediction !== null ||
-              lab.status === "loading" ||
-              lab.status === "running" ||
-              lab.status === "completed" ||
-              lab.status === "error"
+              status === "loading" ||
+              status === "running" ||
+              status === "completed" ||
+              status === "error"
             }
           >
             비교 실행
@@ -124,18 +127,25 @@ export function AddressValueLesson() {
           <button
             type="button"
             onClick={lab.pause}
-            disabled={lab.status !== "running"}
+            disabled={status !== "running"}
           >
             Pause
           </button>
-          <button type="button" onClick={reset} disabled={lab.status === "running"}>
+          <button
+            type="button"
+            onClick={reset}
+            disabled={status === "running" || status === "error"}
+          >
             다시 예측
           </button>
         </div>
 
         {lab.error ? (
           <div className="inline-message error-message" role="alert">
-            {lab.error}
+            <p>{lab.error}</p>
+            <button type="button" onClick={lab.retry}>
+              Worker 다시 시작
+            </button>
           </div>
         ) : null}
 
@@ -146,7 +156,7 @@ export function AddressValueLesson() {
           aria-atomic="true"
         >
           <span className="sr-only">{lab.announcement}</span>
-          {revealed && lab.snapshot && submittedPrediction ? (
+          {revealed && snapshot && submittedPrediction ? (
             <div className="address-result">
               <p
                 className={
@@ -164,7 +174,7 @@ export function AddressValueLesson() {
                   </dt>
                   <dd>
                     x10의 숫자 자체를 복사해 x5 ={" "}
-                    <strong>{formatHex(lab.snapshot.registers[5])}</strong>
+                    <strong>{formatHex(snapshot.registers[5])}</strong>
                   </dd>
                 </div>
                 <div>
@@ -173,7 +183,7 @@ export function AddressValueLesson() {
                   </dt>
                   <dd>
                     유효 주소 0x00001000의 바이트 2a 00 00 00을 읽어 x6 ={" "}
-                    <strong>{formatHex(lab.snapshot.registers[6])}</strong>
+                    <strong>{formatHex(snapshot.registers[6])}</strong>
                   </dd>
                 </div>
               </dl>

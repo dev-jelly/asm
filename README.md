@@ -63,8 +63,9 @@ Cloudflare Worker, D1, R2, or a server-side persistence service.
 ## Dependency security
 
 The production dependency audit is a blocking CI check. A full audit also runs
-as a visible, nonblocking report; it currently reports nine high-severity
-findings in the development-only ESLint/minimatch dependency tree that cannot
-yet be removed without incompatible ecosystem upgrades. The `postcss` and
-`sharp` overrides are temporary security pins and should be removed once
-upstream-compatible patched versions are available.
+with a critical-severity failure threshold; it currently reports nine
+high-severity findings in the development-only ESLint/minimatch dependency tree
+without failing the workflow because they cannot yet be removed without
+incompatible ecosystem upgrades. The `postcss` and `sharp` overrides are
+temporary security pins and should be removed once upstream-compatible patched
+versions are available.

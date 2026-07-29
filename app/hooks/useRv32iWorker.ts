@@ -24,13 +24,14 @@ export type Rv32iWorkerState = {
   lastDelta: StepDelta | null;
   trace: StepDelta[];
   programReady: boolean;
+  commandPending: boolean;
   error: string | null;
   announcement: string;
-  step: () => void;
-  back: () => void;
-  reset: () => void;
-  run: () => void;
-  pause: () => void;
+  step: () => boolean;
+  back: () => boolean;
+  reset: () => boolean;
+  run: () => boolean;
+  pause: () => boolean;
   retry: () => void;
 };
 
@@ -44,6 +45,7 @@ export function useRv32iWorker(
   const [lastDelta, setLastDelta] = useState<StepDelta | null>(null);
   const [trace, setTrace] = useState<StepDelta[]>([]);
   const [loadedRequestId, setLoadedRequestId] = useState<number | null>(null);
+  const [commandPending, setCommandPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState(
     "RV32I 실험실을 준비하고 있습니다.",
@@ -53,10 +55,13 @@ export function useRv32iWorker(
   const runIdRef = useRef("");
   const commandSequenceRef = useRef(0);
   const responseSequenceRef = useRef(0);
+  const pendingCommandIdRef = useRef<string | null>(null);
   const runDeltasRef = useRef<StepDelta[]>([]);
   const runInProgressRef = useRef(false);
   const optionsKey = useMemo(() => JSON.stringify(options ?? {}), [options]);
   const retry = useCallback(() => {
+    pendingCommandIdRef.current = null;
+    setCommandPending(false);
     setLoadedRequestId(null);
     setWorkerGeneration((generation) => generation + 1);
   }, []);
@@ -65,6 +70,7 @@ export function useRv32iWorker(
     let disposed = false;
     runDeltasRef.current = [];
     runInProgressRef.current = false;
+    pendingCommandIdRef.current = null;
 
     let worker: Worker;
     try {
@@ -77,6 +83,7 @@ export function useRv32iWorker(
         if (disposed) return;
         setStatus(() => "error");
         setLoadedRequestId(null);
+        setCommandPending(false);
         setError("실행 Worker를 시작하지 못했습니다. 다시 시도해 주세요.");
         setAnnouncement("실행 Worker를 시작하지 못했습니다.");
       });
@@ -100,6 +107,7 @@ export function useRv32iWorker(
       setLastDelta(null);
       setTrace([]);
       setLoadedRequestId(null);
+      setCommandPending(false);
       setError(null);
       setAnnouncement("RV32I 실험실을 준비하고 있습니다.");
     });
@@ -110,6 +118,8 @@ export function useRv32iWorker(
       worker.terminate();
       runDeltasRef.current = [];
       runInProgressRef.current = false;
+      pendingCommandIdRef.current = null;
+      setCommandPending(false);
       setStatus(() => "error");
       setLoadedRequestId(null);
       setError(message);
@@ -133,6 +143,13 @@ export function useRv32iWorker(
         return;
       }
       responseSequenceRef.current = response.seq;
+      if (
+        response.commandId === pendingCommandIdRef.current &&
+        (response.type === "ERROR" || response.reason !== "run-chunk")
+      ) {
+        pendingCommandIdRef.current = null;
+        setCommandPending(false);
+      }
 
       if (response.type === "ERROR") {
         const committedDeltas = response.deltas ?? [];
@@ -251,8 +268,10 @@ export function useRv32iWorker(
 
   const send = useCallback((type: Exclude<WorkerCommand["type"], "LOAD">) => {
     const worker = workerRef.current;
-    if (!worker) return;
+    if (!worker || pendingCommandIdRef.current !== null) return false;
     const commandId = `command-${++commandSequenceRef.current}`;
+    pendingCommandIdRef.current = commandId;
+    setCommandPending(true);
     try {
       worker.postMessage({
         protocolVersion: PROTOCOL_VERSION,
@@ -260,16 +279,20 @@ export function useRv32iWorker(
         commandId,
         type,
       } satisfies WorkerCommand);
+      return true;
     } catch {
-      if (workerRef.current !== worker) return;
+      if (workerRef.current !== worker) return false;
       workerRef.current = null;
       worker.terminate();
       runDeltasRef.current = [];
       runInProgressRef.current = false;
+      pendingCommandIdRef.current = null;
+      setCommandPending(false);
       setStatus("error");
       setLoadedRequestId(null);
       setError("실행 Worker에 명령을 전달하지 못했습니다. 다시 시도해 주세요.");
       setAnnouncement("실행 Worker에 명령을 전달하지 못했습니다.");
+      return false;
     }
   }, []);
 
@@ -279,6 +302,7 @@ export function useRv32iWorker(
     lastDelta,
     trace,
     programReady: loadedRequestId === requestId,
+    commandPending,
     error,
     announcement,
     step: useCallback(() => send("STEP"), [send]),

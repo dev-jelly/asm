@@ -1,7 +1,10 @@
 type LabControlsProps = {
   status: string;
+  commandPending?: boolean;
   canReveal: boolean;
   canBack: boolean;
+  canRun?: boolean;
+  runLockedReason?: string;
   runConfirmed: boolean;
   onRunConfirmed: (checked: boolean) => void;
   onStep: () => void;
@@ -13,8 +16,11 @@ type LabControlsProps = {
 
 export function LabControls({
   status,
+  commandPending = false,
   canReveal,
   canBack,
+  canRun = true,
+  runLockedReason,
   runConfirmed,
   onRunConfirmed,
   onStep,
@@ -23,7 +29,7 @@ export function LabControls({
   onRun,
   onPause,
 }: LabControlsProps) {
-  const busy = status === "loading";
+  const busy = status === "loading" || commandPending;
   const running = status === "running";
   const completed = status === "completed";
   const error = status === "error";
@@ -66,8 +72,10 @@ export function LabControls({
             completed ||
             error ||
             !canReveal ||
+            !canRun ||
             !runConfirmed
           }
+          aria-describedby={runLockedReason ? "run-requirement" : undefined}
         >
           Run
         </button>
@@ -90,6 +98,11 @@ export function LabControls({
         Step과 Run은 답을 고르거나 잘 모르겠다고 표시한 뒤 사용할 수 있습니다.
         단축키는 Alt+S, Alt+B, Alt+R, Alt+P, Alt+0입니다.
       </p>
+      {runLockedReason ? (
+        <p className="control-note" id="run-requirement">
+          {runLockedReason}
+        </p>
+      ) : null}
     </fieldset>
   );
 }

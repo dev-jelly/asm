@@ -31,12 +31,14 @@ type MemoryPatchWithInitialization = MemoryPatch & {
 type MemoryVisualizerProps = {
   snapshot: Snapshot;
   lastDelta: StepDelta | null;
+  focusAddress?: number | null;
+  preferredUnit?: UnitSize | null;
 };
 
 const UNIT_LABELS: Record<UnitSize, string> = {
-  1: "byte",
-  2: "halfword",
-  4: "word",
+  1: "1바이트 (byte)",
+  2: "2바이트 (halfword)",
+  4: "4바이트 (word)",
 };
 
 const NUMBER_FORMAT_LABELS: Record<NumberFormat, string> = {
@@ -48,12 +50,26 @@ const NUMBER_FORMAT_LABELS: Record<NumberFormat, string> = {
 export function MemoryVisualizer({
   snapshot,
   lastDelta,
+  focusAddress = null,
+  preferredUnit = null,
 }: MemoryVisualizerProps) {
-  const [unitSize, setUnitSize] = useState<UnitSize>(1);
+  const initialOffset = clamp(
+    focusAddress === null ? 0 : focusAddress - snapshot.memoryBase,
+    0,
+    Math.max(0, snapshot.memory.length - 1),
+  );
+  const initialUnit = preferredUnit ?? 1;
+  const [unitSize, setUnitSize] = useState<UnitSize>(initialUnit);
   const [numberFormat, setNumberFormat] = useState<NumberFormat>("hex");
-  const [requestedPageOffset, setRequestedPageOffset] = useState(0);
-  const [selectedOffset, setSelectedOffset] = useState(0);
-  const [addressInput, setAddressInput] = useState(formatHex(snapshot.memoryBase));
+  const [requestedPageOffset, setRequestedPageOffset] = useState(
+    Math.floor(initialOffset / PAGE_SIZE) * PAGE_SIZE,
+  );
+  const [selectedOffset, setSelectedOffset] = useState(
+    initialOffset - (initialOffset % initialUnit),
+  );
+  const [addressInput, setAddressInput] = useState(
+    formatHex(snapshot.memoryBase + initialOffset),
+  );
   const [addressError, setAddressError] = useState("");
 
   const lastPageOffset = Math.max(

@@ -2,17 +2,26 @@
 
 import { useEffect, useState } from "react";
 import {
+  getMemoryMissionsByModule,
+  type MemoryMissionModuleId,
+} from "../content/memoryMissions";
+import {
   clearProgress,
   emptyProgress,
+  exportProgress,
   type ProgressData,
   readProgress,
 } from "../lib/progress";
 
-const ACTIVITIES = [
-  { id: "tracer-bullet", label: "워드 저장과 읽기 추적" },
-  { id: "signed-loads", label: "signed와 unsigned load 비교" },
-  { id: "little-endian", label: "little-endian 바이트 조립" },
-  { id: "address-versus-value", label: "주소와 값 구분" },
+const MODULES: readonly {
+  id: MemoryMissionModuleId;
+  marker: string;
+  label: string;
+}[] = [
+  { id: "pc", marker: "PC", label: "현재 명령어" },
+  { id: "x", marker: "x", label: "레지스터" },
+  { id: "m", marker: "M", label: "메모리" },
+  { id: "b", marker: "B", label: "분기와 반복" },
 ] as const;
 
 type ProgressState =
@@ -52,10 +61,14 @@ export function ProgressPanel() {
       return;
     }
     try {
+      const cleared = clearProgress(window.localStorage);
       setState({
         status: "ready",
-        data: clearProgress(window.localStorage),
+        data: cleared,
       });
+      window.dispatchEvent(
+        new CustomEvent("asm-progress", { detail: cleared }),
+      );
     } catch {
       setState({ status: "unavailable", data: emptyProgress() });
     }
@@ -63,7 +76,13 @@ export function ProgressPanel() {
   }
 
   function exportDeviceProgress() {
-    const blob = new Blob([JSON.stringify(state.data, null, 2)], {
+    let serialized: string;
+    try {
+      serialized = exportProgress(window.localStorage);
+    } catch {
+      serialized = `${JSON.stringify(state.data, null, 2)}\n`;
+    }
+    const blob = new Blob([serialized], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
@@ -76,15 +95,22 @@ export function ProgressPanel() {
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
-  const completed = state.data.completedActivities.length;
+  const started = Object.values(state.data.missions).filter(
+    (mission) =>
+      mission.status !== "not-started" ||
+      mission.predictionAttempts > 0,
+  ).length;
+  const independent = Object.values(state.data.missions).filter(
+    (mission) => mission.status === "independent",
+  ).length;
 
   return (
     <div className="progress-panel">
       <div>
         <h2 id="progress-title">로그인 없이 이 브라우저에 저장합니다.</h2>
         <p>
-          계정이나 서버 저장소는 사용하지 않습니다. 이 기기에서 완료한 활동만
-          기록합니다.
+          계정이나 서버 저장소는 사용하지 않습니다. 미션별 연습 결과와 마지막
+          위치를 이 기기에 기록합니다.
         </p>
       </div>
       <div className="progress-detail" aria-live="polite">
@@ -98,28 +124,54 @@ export function ProgressPanel() {
           <>
             <p className="progress-summary">
               <strong>
-                {completed === 0
-                  ? "아직 완료한 활동이 없습니다."
-                  : completed === ACTIVITIES.length
-                    ? "메모리 학습 경로를 완료했습니다."
-                    : "메모리 학습 경로를 진행 중입니다."}
+                {started === 0
+                  ? "아직 시작한 미션이 없습니다."
+                  : independent === Object.keys(state.data.missions).length
+                    ? "모든 미션을 혼자 해결했습니다."
+                    : "RV32I 학습 경로를 진행 중입니다."}
               </strong>
               <span>
-                {completed} / {ACTIVITIES.length} 활동 완료
+                시작한 미션 {started}개, 그중 혼자 해결 {independent}개
               </span>
             </p>
-            <ul className="progress-list">
-              {ACTIVITIES.map((activity) => {
-                const done = state.data.completedActivities.includes(activity.id);
-                return (
-                  <li key={activity.id}>
-                    <span aria-hidden="true">{done ? "✓" : "○"}</span>
-                    <span>{activity.label}</span>
-                    <strong>{done ? "완료" : "미완료"}</strong>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="progress-modules">
+              {MODULES.map((module) => (
+                <section key={module.id} className="progress-module">
+                  <h3>
+                    <code>{module.marker}</code>
+                    <span>{module.label}</span>
+                  </h3>
+                  <ul className="progress-list">
+                    {getMemoryMissionsByModule(module.id).map((mission) => {
+                      const evidence = state.data.missions[mission.id];
+                      const statusLabel =
+                        evidence.status === "independent"
+                          ? "혼자 해결"
+                          : evidence.status === "guided"
+                            ? "연습 완료"
+                            : evidence.predictionAttempts > 0
+                              ? "학습 중"
+                              : "시작 전";
+                      return (
+                        <li key={mission.id}>
+                          <span aria-hidden="true">
+                            {evidence.status === "independent"
+                              ? "✓"
+                              : evidence.status === "guided"
+                                ? "△"
+                                : evidence.predictionAttempts > 0
+                                  ? "◐"
+                                  : "○"}
+                          </span>
+                          <span>{mission.title}</span>
+                          <strong>{statusLabel}</strong>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              ))}
+            </div>
             <div className="progress-actions">
               <button
                 type="button"
@@ -131,7 +183,7 @@ export function ProgressPanel() {
                 type="button"
                 className="text-button danger-action"
                 onClick={resetDeviceProgress}
-                disabled={completed === 0}
+                disabled={started === 0}
               >
                 {confirmingReset ? "정말 진도 지우기" : "이 기기의 진도 지우기"}
               </button>

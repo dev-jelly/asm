@@ -1,4 +1,3 @@
-import { AddressValueLesson } from "./components/AddressValueLesson";
 import { LearningLab } from "./components/LearningLab";
 import { ProgressPanel } from "./components/ProgressPanel";
 
@@ -48,62 +47,6 @@ export default function Home() {
             <LearningLab />
           </div>
         </div>
-
-        <section className="content-section curriculum" id="learn" aria-labelledby="learn-title">
-          <div className="section-lead">
-            <h2 id="learn-title">작은 상태 변화에서 실제 프로그램까지.</h2>
-            <p>
-              명령어를 먼저 외우지 않습니다. 한 번에 하나의 개념을 익히고,
-              도움을 줄인 새 문제에서 다시 확인합니다.
-            </p>
-          </div>
-          <ol className="curriculum-path">
-            <li>
-              <span className="path-marker" aria-hidden="true">
-                PC
-              </span>
-              <div>
-                <h3>CPU가 보는 현재 상태</h3>
-                <p>PC, 레지스터, 32비트 인코딩을 한 줄의 코드와 연결합니다.</p>
-              </div>
-              <strong>현재 실험</strong>
-            </li>
-            <li>
-              <span className="path-marker" aria-hidden="true">
-                x
-              </span>
-              <div>
-                <h3>레지스터와 32비트 산술</h3>
-                <p>x0의 고정값과 32비트 범위를 넘는 계산 결과를 확인합니다.</p>
-              </div>
-              <strong>기초 구현</strong>
-            </li>
-            <li>
-              <span className="path-marker" aria-hidden="true">
-                M
-              </span>
-              <div>
-                <h3>주소와 메모리</h3>
-                <p>유효 주소, 바이트 순서, load와 store의 차이를 구분합니다.</p>
-              </div>
-              <strong>집중 구현</strong>
-            </li>
-            <li>
-              <span className="path-marker" aria-hidden="true">
-                B
-              </span>
-              <div>
-                <h3>분기와 반복</h3>
-                <p>비교 결과와 다음 PC를 예측해 실행 흐름을 추적합니다.</p>
-              </div>
-              <strong>기초 구현</strong>
-            </li>
-          </ol>
-        </section>
-
-        <section className="content-section practice-section" id="practice" aria-labelledby="practice-title">
-          <AddressValueLesson />
-        </section>
 
         <section className="content-section reference-section" id="reference" aria-labelledby="reference-title">
           <div className="section-lead">

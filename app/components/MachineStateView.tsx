@@ -15,17 +15,97 @@ const ABI_NAMES: Record<number, string> = {
 type MachineStateViewProps = {
   snapshot: Snapshot;
   lastDelta: StepDelta | null;
+  latestMemoryDelta?: StepDelta | null;
+  focus?: {
+    panel: "pc" | "registers" | "memory" | "branch";
+    registers: readonly number[];
+    address: number | null;
+    unit: 1 | 2 | 4 | null;
+  };
 };
 
 export function MachineStateView({
   snapshot,
   lastDelta,
+  latestMemoryDelta = null,
+  focus,
 }: MachineStateViewProps) {
   const registerWrites = new Map(
     lastDelta?.registerWrites.map((write) => [write.register, write]) ?? [],
   );
   const encoding =
     snapshot.currentInstruction?.encoding ?? lastDelta?.instruction.encoding;
+  const relevantRegisters = [
+    ...new Set(focus ? [0, ...focus.registers] : RELEVANT_REGISTERS),
+  ].sort((left, right) => left - right);
+  const memoryIsPrimary =
+    focus?.panel === "memory" || focus?.panel === "branch" || !focus;
+  const memoryVisualizer = (
+    <MemoryVisualizer
+      snapshot={snapshot}
+      lastDelta={latestMemoryDelta}
+      focusAddress={focus?.address}
+      preferredUnit={focus?.unit}
+    />
+  );
+  const registerVisualizer = (
+    <section aria-labelledby="register-title">
+      <div className="section-heading-row">
+        <h3 id="register-title">레지스터</h3>
+        <span>32비트 비트 패턴</span>
+      </div>
+      <div
+        className="table-scroll"
+        role="region"
+        tabIndex={0}
+        aria-labelledby="register-title"
+      >
+        <table>
+          <caption className="sr-only">
+            관련 RV32I 레지스터의 현재 값과 최근 변화
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">이름</th>
+              <th scope="col">현재 값</th>
+              <th scope="col">최근 상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            {relevantRegisters.map((register) => {
+              const write = registerWrites.get(register);
+              return (
+                <tr key={register} data-change={write ? "write" : undefined}>
+                  <th scope="row">
+                    <code>x{register}</code>{" "}
+                    <span className="muted">{ABI_NAMES[register]}</span>
+                  </th>
+                  <td>
+                    <code>{formatHex(snapshot.registers[register])}</code>
+                  </td>
+                  <td>
+                    {write ? (
+                      <span className="change-text">
+                        {write.committed ? "쓰기" : "쓰기 무시"}{" "}
+                        <code>{formatHex(write.before)}</code>
+                        <span aria-hidden="true"> → </span>
+                        <span className="sr-only">에서 </span>
+                        <code>{formatHex(write.after)}</code>
+                      </span>
+                    ) : register === 0 ? (
+                      "고정값"
+                    ) : (
+                      "변화 없음"
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
 
   return (
     <div className="machine-state">
@@ -54,64 +134,20 @@ export function MachineStateView({
       </section>
 
       <div className="state-columns">
-        <section aria-labelledby="register-title">
-          <div className="section-heading-row">
-            <h3 id="register-title">레지스터</h3>
-            <span>32비트 · 부호 없음</span>
-          </div>
-          <div
-            className="table-scroll"
-            role="region"
-            tabIndex={0}
-            aria-labelledby="register-title"
-          >
-            <table>
-              <caption className="sr-only">
-                관련 RV32I 레지스터의 현재 값과 최근 변화
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">이름</th>
-                  <th scope="col">현재 값</th>
-                  <th scope="col">최근 상태</th>
-                </tr>
-              </thead>
-              <tbody>
-                {RELEVANT_REGISTERS.map((register) => {
-                  const write = registerWrites.get(register);
-                  return (
-                    <tr key={register} data-change={write ? "write" : undefined}>
-                      <th scope="row">
-                        <code>x{register}</code>{" "}
-                        <span className="muted">{ABI_NAMES[register]}</span>
-                      </th>
-                      <td>
-                        <code>{formatHex(snapshot.registers[register])}</code>
-                      </td>
-                      <td>
-                        {write ? (
-                          <span className="change-text">
-                            {write.committed ? "쓰기" : "쓰기 무시"}{" "}
-                            <code>{formatHex(write.before)}</code>
-                            <span aria-hidden="true"> → </span>
-                            <span className="sr-only">에서 </span>
-                            <code>{formatHex(write.after)}</code>
-                          </span>
-                        ) : register === 0 ? (
-                          "고정값"
-                        ) : (
-                          "변화 없음"
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <MemoryVisualizer snapshot={snapshot} lastDelta={lastDelta} />
+        {memoryIsPrimary ? (
+          <>
+            {memoryVisualizer}
+            {registerVisualizer}
+          </>
+        ) : (
+          <>
+            {registerVisualizer}
+            <details className="secondary-state-view">
+              <summary>메모리 지도 열기</summary>
+              {memoryVisualizer}
+            </details>
+          </>
+        )}
       </div>
 
       <section className="delta-view" aria-labelledby="delta-title">

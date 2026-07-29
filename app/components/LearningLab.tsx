@@ -1,78 +1,61 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { MachineOptions } from "../../lib/rv32i/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  getMemoryMission,
+  MEMORY_MISSIONS,
+  type MemoryMissionCheckpoint,
+  type MemoryMissionId,
+} from "../content/memoryMissions";
 import { useRv32iWorker } from "../hooks/useRv32iWorker";
-import { markLocalProgress } from "../lib/progress";
+import {
+  emptyProgress,
+  markLocalMissionProgress,
+  readProgress,
+  setLocalLastMission,
+  type ProgressData,
+} from "../lib/progress";
 import { ExecutionTimeline } from "./ExecutionTimeline";
 import { LabControls } from "./LabControls";
 import { MachineStateView } from "./MachineStateView";
-import { expectedPrediction, PredictionGate } from "./PredictionGate";
+import { MissionNavigator } from "./MissionNavigator";
+import {
+  MissionTransfer,
+  type TransferResult,
+} from "./MissionTransfer";
+import {
+  expectedPrediction,
+  predictionLabel,
+  PredictionGate,
+} from "./PredictionGate";
+import { PredictionComparison } from "./PredictionComparison";
 
-type LabPreset = {
-  id: string;
-  activityId: string;
-  title: string;
-  summary: string;
-  focus: string;
-  source: string;
-  options?: MachineOptions;
+const DEFAULT_MISSION = MEMORY_MISSIONS[0];
+
+type SubmittedPrediction = {
+  value: string;
+  label: string;
+  skipped: boolean;
+  stepIndex: number;
+  pcBefore: number;
+  sourceLine: number;
+  expected: string;
+  checkpoint: MemoryMissionCheckpoint | null;
 };
 
-const LAB_PRESETS: readonly LabPreset[] = [
-  {
-    id: "word-roundtrip",
-    activityId: "tracer-bullet",
-    title: "워드 왕복",
-    summary: "값을 저장하고 다시 읽은 뒤 분기 결과를 확인합니다.",
-    focus: "주소 계산, 4바이트 store/load, 분기",
-    source: `addi x5, x0, 7
-sw   x5, 0(x10)
-lw   x6, 0(x10)
-beq  x5, x6, done
-addi x7, x0, 1
-done:`,
-  },
-  {
-    id: "signed-loads",
-    activityId: "signed-loads",
-    title: "부호 확장",
-    summary: "같은 바이트를 signed와 unsigned load로 다르게 읽습니다.",
-    focus: "lb/lbu, lh/lhu, 32비트 부호 확장",
-    source: `lb   x5, 0(x10)
-lbu  x6, 0(x10)
-lh   x7, 2(x10)
-lhu  x8, 2(x10)`,
-    options: {
-      initialMemory: [
-        { address: 0x1000, bytes: [0x80, 0x7f, 0x00, 0x80] },
-      ],
-    },
-  },
-  {
-    id: "little-endian",
-    activityId: "little-endian",
-    title: "바이트 조립",
-    summary: "폭이 다른 store가 한 워드 안에 배치되는 순서를 관찰합니다.",
-    focus: "sb/sh/sw, little-endian, 부분 쓰기",
-    source: `addi x5, x0, 127
-sb   x5, 0(x10)
-addi x6, x0, -1
-sh   x6, 2(x10)
-lw   x7, 0(x10)`,
-  },
-] as const;
-
 export function LearningLab() {
-  const [presetId, setPresetId] = useState(LAB_PRESETS[0].id);
-  const selectedPreset =
-    LAB_PRESETS.find((preset) => preset.id === presetId) ?? LAB_PRESETS[0];
-  const [source, setSource] = useState(selectedPreset.source);
-  const [draftSource, setDraftSource] = useState(selectedPreset.source);
+  const [missionId, setMissionId] =
+    useState<MemoryMissionId>(DEFAULT_MISSION.id);
+  const missionIdRef = useRef<MemoryMissionId>(DEFAULT_MISSION.id);
+  const missionHeadingRef = useRef<HTMLHeadingElement>(null);
+  const selectedMission = getMemoryMission(missionId) ?? DEFAULT_MISSION;
+  const [source, setSource] = useState(DEFAULT_MISSION.source);
+  const [draftSource, setDraftSource] = useState(DEFAULT_MISSION.source);
   const [programRequestId, setProgramRequestId] = useState(0);
+  const [progress, setProgress] = useState<ProgressData>(emptyProgress);
   const lab = useRv32iWorker(
     source,
-    selectedPreset.options,
+    selectedMission.options,
     programRequestId,
   );
   const programReady = lab.programReady;
@@ -82,40 +65,139 @@ export function LearningLab() {
       ? lab.status
       : "loading";
   const visibleSnapshot = programReady ? lab.snapshot : null;
-  const isCustomProgram = source !== selectedPreset.source;
+  const isCustomProgram = source !== selectedMission.source;
   const [gate, setGate] = useState({
     stepIndex: -1,
     prediction: "",
     skipped: false,
   });
-  const [submittedPrediction, setSubmittedPrediction] = useState<{
-    value: string;
-    skipped: boolean;
-    stepIndex: number;
-    pcBefore: number;
-    sourceLine: number;
-    expected: string;
-  } | null>(null);
+  const [submittedPrediction, setSubmittedPrediction] =
+    useState<SubmittedPrediction | null>(null);
   const [runConfirmed, setRunConfirmed] = useState(false);
+  const [checkpointAttempted, setCheckpointAttempted] = useState(false);
+  const [transferChoice, setTransferChoice] = useState("");
+  const [transferResult, setTransferResult] =
+    useState<TransferResult>(null);
   const currentStepIndex = visibleSnapshot?.stepIndex ?? -1;
   const activeGate =
     gate.stepIndex === currentStepIndex
       ? gate
       : { stepIndex: currentStepIndex, prediction: "", skipped: false };
+  const activeCheckpoint =
+    !isCustomProgram &&
+    visibleSnapshot?.currentInstruction?.sourceLine ===
+      selectedMission.checkpoint.sourceLine
+      ? selectedMission.checkpoint
+      : null;
+  const showingCompletedPrediction =
+    visibleStatus === "completed" && submittedPrediction !== null;
+  const displayedCheckpoint = showingCompletedPrediction
+    ? submittedPrediction.checkpoint
+    : activeCheckpoint;
+  const displayedPrediction = showingCompletedPrediction
+    ? submittedPrediction.value
+    : activeGate.prediction;
+  const displayedSkipped = showingCompletedPrediction
+    ? submittedPrediction.skipped
+    : activeGate.skipped;
+  const canReveal = Boolean(activeGate.prediction || activeGate.skipped);
+  const canRunMission = isCustomProgram || checkpointAttempted;
+  const transferReady =
+    !isCustomProgram &&
+    visibleStatus === "completed" &&
+    checkpointAttempted;
+  const currentMissionIndex = MEMORY_MISSIONS.findIndex(
+    (mission) => mission.id === selectedMission.id,
+  );
+  const nextMissionId =
+    MEMORY_MISSIONS[currentMissionIndex + 1]?.id ?? null;
+
+  useEffect(() => {
+    const refresh = () => {
+      try {
+        setProgress(readProgress(window.localStorage));
+      } catch {
+        setProgress(emptyProgress());
+      }
+    };
+    refresh();
+    window.addEventListener("asm-progress", refresh);
+    window.addEventListener("asm-progress-unavailable", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("asm-progress", refresh);
+      window.removeEventListener("asm-progress-unavailable", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, []);
+
+  useEffect(() => {
+    const loadMissionFromLocation = (allowResume: boolean) => {
+      const url = new URL(window.location.href);
+      const hasLesson = url.searchParams.has("lesson");
+      const explicitMission = hasLesson
+        ? getMemoryMission(url.searchParams.get("lesson") ?? "")
+        : undefined;
+      let requested = explicitMission;
+      let resumedFromStorage = false;
+      if (!requested && allowResume && !hasLesson) {
+        try {
+          const resumeId = readProgress(window.localStorage).lastMissionId;
+          requested = resumeId ? getMemoryMission(resumeId) : undefined;
+          resumedFromStorage = Boolean(requested);
+        } catch {
+          requested = undefined;
+        }
+      }
+      requested ??= DEFAULT_MISSION;
+      if (resumedFromStorage || (hasLesson && !explicitMission)) {
+        url.searchParams.set("lesson", requested.id);
+        url.hash = "playground";
+        window.history.replaceState(
+          { lesson: requested.id },
+          "",
+          url,
+        );
+      }
+      if (
+        hasLesson ||
+        resumedFromStorage ||
+        requested.id !== missionIdRef.current
+      ) {
+        setLocalLastMission(requested.id);
+      }
+      if (requested.id === missionIdRef.current) return;
+      missionIdRef.current = requested.id;
+      setMissionId(requested.id);
+      setSource(requested.source);
+      setDraftSource(requested.source);
+      setProgramRequestId((requestId) => requestId + 1);
+      resetLearningState();
+    };
+
+    const handlePopState = () => loadMissionFromLocation(false);
+    loadMissionFromLocation(true);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     if (
       lab.status === "completed" &&
       lab.programReady &&
-      source === selectedPreset.source
+      source === selectedMission.source &&
+      checkpointAttempted
     ) {
-      markLocalProgress(selectedPreset.activityId);
+      markLocalMissionProgress(selectedMission.id, {
+        status: "guided",
+      });
     }
   }, [
+    checkpointAttempted,
     lab.programReady,
     lab.status,
-    selectedPreset.activityId,
-    selectedPreset.source,
+    selectedMission.id,
+    selectedMission.source,
     source,
   ]);
 
@@ -144,6 +226,7 @@ export function LearningLab() {
       } else if (
         key === "r" &&
         canReveal &&
+        canRunMission &&
         runConfirmed &&
         readyForExecution
       ) {
@@ -166,7 +249,6 @@ export function LearningLab() {
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
-  const canReveal = Boolean(activeGate.prediction || activeGate.skipped);
   const submittedDelta = useMemo(
     () =>
       submittedPrediction
@@ -174,59 +256,132 @@ export function LearningLab() {
             (delta) =>
               delta.stepIndexBefore === submittedPrediction.stepIndex &&
               delta.pcBefore === submittedPrediction.pcBefore &&
-              delta.instruction.sourceLine === submittedPrediction.sourceLine,
+              delta.instruction.sourceLine ===
+                submittedPrediction.sourceLine,
           ) ?? null
         : null,
     [lab.trace, submittedPrediction],
   );
-  const predictionFeedback =
-    submittedPrediction && submittedDelta
-      ? submittedPrediction.skipped
-        ? "예측하지 않고 실제 변화를 확인했습니다."
-        : submittedPrediction.value === submittedPrediction.expected
-          ? "예측이 맞았습니다."
-          : "예측이 달랐습니다. 상태 변화에서 실행 전후 값을 확인해 보세요."
-      : "";
+  const latestMemoryDelta = useMemo(
+    () => {
+      for (let index = lab.trace.length - 1; index >= 0; index -= 1) {
+        const delta = lab.trace[index];
+        if (
+          delta.memoryAccesses.length > 0 ||
+          delta.memoryPatches.length > 0
+        ) {
+          return delta;
+        }
+      }
+      return null;
+    },
+    [lab.trace],
+  );
+  const submittedCorrect =
+    submittedPrediction && !submittedPrediction.skipped
+      ? submittedPrediction.value === submittedPrediction.expected
+      : null;
 
-  function submitAndRun(action: () => void) {
+  function resetLearningState() {
+    setGate({ stepIndex: -1, prediction: "", skipped: false });
+    setSubmittedPrediction(null);
+    setRunConfirmed(false);
+    setCheckpointAttempted(false);
+    setTransferChoice("");
+    setTransferResult(null);
+  }
+
+  function submitAndRun(action: () => boolean) {
     const instruction = visibleSnapshot?.currentInstruction;
     if (!canReveal || !instruction) return;
+    if (!action()) return;
+    const checkpoint = activeCheckpoint;
+    const expected = expectedPrediction(instruction, checkpoint);
     setSubmittedPrediction({
       value: activeGate.prediction,
+      label: activeGate.skipped
+        ? "예측하지 않고 실제 결과 확인"
+        : predictionLabel(activeGate.prediction, checkpoint),
       skipped: activeGate.skipped,
       stepIndex: currentStepIndex,
       pcBefore: instruction.address,
       sourceLine: instruction.sourceLine,
-      expected: expectedPrediction(instruction),
+      expected,
+      checkpoint,
     });
-    action();
+    if (checkpoint) {
+      setCheckpointAttempted(true);
+      if (!activeGate.skipped) {
+        markLocalMissionProgress(selectedMission.id, {
+          predictionAttempt: true,
+        });
+      }
+    }
   }
 
   function resetLab() {
-    setGate({ stepIndex: -1, prediction: "", skipped: false });
-    setSubmittedPrediction(null);
-    setRunConfirmed(false);
-    lab.reset();
+    if (lab.reset()) resetLearningState();
   }
 
   function prepareNewProgram(nextSource: string) {
-    setGate({ stepIndex: -1, prediction: "", skipped: false });
-    setSubmittedPrediction(null);
-    setRunConfirmed(false);
+    resetLearningState();
     setProgramRequestId((requestId) => requestId + 1);
     setSource(nextSource);
     setDraftSource(nextSource);
   }
 
-  function selectPreset(preset: LabPreset) {
+  function selectMission(nextMissionId: MemoryMissionId) {
+    const nextMission = getMemoryMission(nextMissionId);
+    if (
+      !nextMission ||
+      nextMission.id === missionIdRef.current ||
+      lab.commandPending
+    ) {
+      return;
+    }
     if (lab.status === "running") lab.pause();
-    setPresetId(preset.id);
-    prepareNewProgram(preset.source);
+    missionIdRef.current = nextMission.id;
+    setMissionId(nextMission.id);
+    prepareNewProgram(nextMission.source);
+    setLocalLastMission(nextMission.id);
+    const url = new URL(window.location.href);
+    url.searchParams.set("lesson", nextMission.id);
+    url.hash = "playground";
+    window.history.pushState({ lesson: nextMission.id }, "", url);
+  }
+
+  function selectNextMission(nextMissionId: MemoryMissionId) {
+    selectMission(nextMissionId);
+    window.requestAnimationFrame(() => {
+      missionHeadingRef.current?.focus();
+      missionHeadingRef.current?.scrollIntoView({
+        block: "start",
+      });
+    });
   }
 
   function applyDraft() {
-    if (!draftSource.trim() || lab.status === "running") return;
+    if (
+      !draftSource.trim() ||
+      lab.status === "running" ||
+      lab.commandPending
+    ) {
+      return;
+    }
     prepareNewProgram(draftSource);
+  }
+
+  function checkTransfer() {
+    if (!transferReady || !transferChoice) return;
+    const correct =
+      transferChoice === selectedMission.transfer.correctChoiceId;
+    setTransferResult(correct ? "correct" : "different");
+    if (correct) {
+      markLocalMissionProgress(selectedMission.id, {
+        status: "independent",
+        transferPassed: true,
+      });
+    }
   }
 
   return (
@@ -234,8 +389,8 @@ export function LearningLab() {
       <header className="lab-intro">
         <h1 id="lab-title">메모리는 바이트 단위로 움직입니다.</h1>
         <p>
-          실행 전에 변화를 예측하고, 주소 계산부터 바이트 조립까지 한 화면에서
-          추적하세요.
+          실행 전에 주소와 값을 예측하고 실제 바이트 변화를 한 단계씩
+          확인하세요.
         </p>
         <ul className="lab-promises" aria-label="학습 환경 안내">
           <li>로그인 없이 시작</li>
@@ -244,28 +399,33 @@ export function LearningLab() {
         </ul>
       </header>
 
-      <nav className="lab-preset-nav" aria-label="메모리 실험 선택">
-        {LAB_PRESETS.map((preset) => (
-          <button
-            key={preset.id}
-            type="button"
-            className="lab-preset-button"
-            data-selected={
-              !isCustomProgram && preset.id === selectedPreset.id
-                ? true
-                : undefined
-            }
-            aria-pressed={
-              !isCustomProgram && preset.id === selectedPreset.id
-            }
-            onClick={() => selectPreset(preset)}
-            disabled={lab.status === "running"}
-          >
-            <strong>{preset.title}</strong>
-            <span>{preset.summary}</span>
-          </button>
-        ))}
-      </nav>
+      <MissionNavigator
+        selectedMission={selectedMission}
+        progress={progress}
+        disabled={lab.status === "running" || lab.commandPending}
+        onSelect={selectMission}
+      />
+
+      <header className="mission-context">
+        <span className="path-marker" aria-hidden="true">
+          {selectedMission.marker}
+        </span>
+        <div>
+          <h2 ref={missionHeadingRef} tabIndex={-1}>
+            {selectedMission.title}
+          </h2>
+          <p>{selectedMission.objective}</p>
+        </div>
+        <strong>
+          {progress.missions[selectedMission.id].status === "independent"
+            ? "혼자 해결"
+            : progress.missions[selectedMission.id].status === "guided"
+              ? "연습 완료"
+              : progress.missions[selectedMission.id].predictionAttempts > 0
+                ? "학습 중"
+                : "시작 전"}
+        </strong>
+      </header>
 
       <div className="lab-workspace">
         <div className="lab-source-and-prediction">
@@ -274,8 +434,8 @@ export function LearningLab() {
               <h2 id="source-title">RV32I 코드</h2>
               <span>
                 {isCustomProgram
-                  ? "사용자 코드 · 선택한 예제로 복원 가능"
-                  : selectedPreset.focus}
+                  ? "사용자 코드, 선택한 미션으로 복원 가능"
+                  : selectedMission.summary}
               </span>
             </div>
             <ol className="source-code" aria-label="실행할 RV32I 프로그램">
@@ -285,12 +445,17 @@ export function LearningLab() {
                   visibleSnapshot?.currentInstruction?.sourceLine ===
                   lineNumber;
                 return (
-                  <li key={`${lineNumber}-${line}`} data-current={current || undefined}>
+                  <li
+                    key={`${lineNumber}-${line}`}
+                    data-current={current || undefined}
+                  >
                     <span className="current-marker" aria-hidden="true">
                       {current ? "›" : " "}
                     </span>
                     <code>{line || " "}</code>
-                    {current ? <span className="sr-only">현재 명령어</span> : null}
+                    {current ? (
+                      <span className="sr-only">현재 명령어</span>
+                    ) : null}
                   </li>
                 );
               })}
@@ -320,6 +485,7 @@ export function LearningLab() {
                   onClick={applyDraft}
                   disabled={
                     lab.status === "running" ||
+                    lab.commandPending ||
                     !draftSource.trim() ||
                     draftSource === source
                   }
@@ -328,14 +494,15 @@ export function LearningLab() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => prepareNewProgram(selectedPreset.source)}
+                  onClick={() => prepareNewProgram(selectedMission.source)}
                   disabled={
                     lab.status === "running" ||
-                    (draftSource === selectedPreset.source &&
-                      source === selectedPreset.source)
+                    lab.commandPending ||
+                    (draftSource === selectedMission.source &&
+                      source === selectedMission.source)
                   }
                 >
-                  예제로 복원
+                  미션으로 복원
                 </button>
               </div>
             </details>
@@ -343,10 +510,12 @@ export function LearningLab() {
 
           <PredictionGate
             instruction={visibleSnapshot?.currentInstruction ?? null}
-            selected={activeGate.prediction}
-            skipped={activeGate.skipped}
+            checkpoint={displayedCheckpoint}
+            selected={displayedPrediction}
+            skipped={displayedSkipped}
             disabled={
               visibleStatus === "loading" ||
+              lab.commandPending ||
               visibleStatus === "running" ||
               visibleStatus === "completed" ||
               visibleStatus === "error"
@@ -370,25 +539,37 @@ export function LearningLab() {
           />
 
           <div
-            className="lab-feedback"
+            className="lab-announcement sr-only"
             role="status"
             aria-live="polite"
             aria-atomic="true"
           >
-            <span className="sr-only">{lab.announcement}</span>
-            {predictionFeedback ? (
-              <div className="prediction-result">
-                <strong>예측 결과</strong>
-                <p>{predictionFeedback}</p>
-              </div>
+            {lab.announcement}
+          </div>
+          <div className="lab-feedback">
+            {submittedPrediction && submittedDelta ? (
+              <PredictionComparison
+                delta={submittedDelta}
+                predictionLabel={submittedPrediction.label}
+                correct={submittedCorrect}
+                skipped={submittedPrediction.skipped}
+                explanation={submittedPrediction.checkpoint?.explanation}
+              />
             ) : null}
           </div>
         </div>
 
         <LabControls
           status={visibleStatus}
+          commandPending={lab.commandPending}
           canReveal={canReveal}
           canBack={(visibleSnapshot?.historyDepth ?? 0) > 0}
+          canRun={canRunMission}
+          runLockedReason={
+            canRunMission
+              ? undefined
+              : "미션의 핵심 예측이 있는 명령어까지 Step으로 진행하세요."
+          }
           runConfirmed={runConfirmed}
           onRunConfirmed={setRunConfirmed}
           onStep={() => submitAndRun(lab.step)}
@@ -403,7 +584,7 @@ export function LearningLab() {
             <div className="lab-message error-message" role="alert">
               <strong>실행을 계속할 수 없습니다</strong>
               <p>{lab.error}</p>
-              <p>Worker를 다시 시작하거나 선택한 예제로 복원하세요.</p>
+              <p>Worker를 다시 시작하거나 현재 미션으로 복원하세요.</p>
               <div className="lab-error-actions">
                 <button type="button" onClick={lab.retry}>
                   Worker 다시 시작
@@ -411,9 +592,9 @@ export function LearningLab() {
                 <button
                   type="button"
                   className="primary-control"
-                  onClick={() => prepareNewProgram(selectedPreset.source)}
+                  onClick={() => prepareNewProgram(selectedMission.source)}
                 >
-                  예제로 복원
+                  미션으로 복원
                 </button>
               </div>
             </div>
@@ -435,14 +616,31 @@ export function LearningLab() {
                       : "예측 대기"}
               </div>
               <MachineStateView
+                key={isCustomProgram ? "custom-program" : selectedMission.id}
                 snapshot={visibleSnapshot}
                 lastDelta={lab.lastDelta}
+                latestMemoryDelta={latestMemoryDelta}
+                focus={isCustomProgram ? undefined : selectedMission.focus}
               />
               <ExecutionTimeline trace={lab.trace} />
             </>
           )}
         </div>
       </div>
+
+      <MissionTransfer
+        mission={selectedMission}
+        ready={transferReady}
+        selected={transferChoice}
+        result={transferResult}
+        nextMissionId={nextMissionId}
+        onSelect={(choiceId) => {
+          setTransferChoice(choiceId);
+          setTransferResult(null);
+        }}
+        onCheck={checkTransfer}
+        onNext={selectNextMission}
+      />
     </section>
   );
 }

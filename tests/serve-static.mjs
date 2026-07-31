@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { extname, join, normalize, resolve } from "node:path";
 
 const host = "127.0.0.1";
-const port = 4173;
+const port = Number.parseInt(process.env.ASM_E2E_PORT ?? "4173", 10);
 const outputRoot = resolve("dist/client");
 const contentTypes = {
   ".css": "text/css; charset=utf-8",

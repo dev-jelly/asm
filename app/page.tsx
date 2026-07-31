@@ -1,3 +1,4 @@
+import { Badge } from "@astryxdesign/core/Badge";
 import { LearningLab } from "./components/LearningLab";
 import { ProgressPanel } from "./components/ProgressPanel";
 
@@ -38,7 +39,7 @@ export default function Home() {
             </li>
           </ul>
         </nav>
-        <span className="profile-label">RV32I 학습 모드</span>
+        <Badge label="RV32I 학습 모드" variant="teal" />
       </header>
 
       <main id="main-content">

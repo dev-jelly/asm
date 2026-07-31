@@ -1,5 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const e2ePort = Number.parseInt(process.env.ASM_E2E_PORT ?? "4173", 10);
+const baseURL = `http://127.0.0.1:${e2ePort}/asm/`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
@@ -7,13 +10,13 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: "http://127.0.0.1:4173/asm/",
+    baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   webServer: {
     command: "node tests/serve-static.mjs",
-    url: "http://127.0.0.1:4173/asm/",
+    url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 20_000,
   },

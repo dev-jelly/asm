@@ -4,6 +4,7 @@ import {
   DATA_BASE,
   DEFAULT_HISTORY_LIMIT,
   type Instruction,
+  type InstructionPredictionMetadata,
   type LoadInstruction,
   type LoadMnemonic,
   MAX_HISTORY_LIMIT,
@@ -44,6 +45,26 @@ function isStoreInstruction(
   instruction: Instruction,
 ): instruction is StoreInstruction {
   return Object.hasOwn(STORE_SIZES, instruction.mnemonic);
+}
+
+function predictionMetadata(
+  instruction: Instruction,
+): InstructionPredictionMetadata {
+  if (instruction.mnemonic === "addi" || isLoadInstruction(instruction)) {
+    return {
+      effect: "register",
+      destinationRegister: instruction.operands[0].index,
+    };
+  }
+  if (isStoreInstruction(instruction)) {
+    return { effect: "memory" };
+  }
+  return {
+    effect: "branch",
+    leftRegister: instruction.operands[0].index,
+    rightRegister: instruction.operands[1].index,
+    target: instruction.operands[2].address,
+  };
 }
 
 function extendLoadedValue(
@@ -334,6 +355,7 @@ export class Rv32iMachine {
             encoding: current.encoding,
             sourceLine: current.sourceLine,
             sourceText: current.sourceText,
+            prediction: predictionMetadata(current),
           }
         : null,
     };

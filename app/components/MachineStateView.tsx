@@ -40,6 +40,10 @@ export function MachineStateView({
   ].sort((left, right) => left - right);
   const memoryIsPrimary =
     focus?.panel === "memory" || focus?.panel === "branch" || !focus;
+  const pcBefore = lastDelta?.pcBefore ?? snapshot.pc;
+  const pcAfter =
+    lastDelta?.pcAfter ??
+    ((snapshot.pc + (snapshot.currentInstruction ? 4 : 0)) >>> 0);
   const memoryVisualizer = (
     <MemoryVisualizer
       snapshot={snapshot}
@@ -132,6 +136,38 @@ export function MachineStateView({
           <code>{encoding === undefined ? "없음" : formatHex(encoding)}</code>
         </div>
       </section>
+
+      {focus?.panel === "pc" ? (
+        <section className="pc-visualizer" aria-labelledby="pc-visualizer-title">
+          <div className="section-heading-row">
+            <h3 id="pc-visualizer-title">PC 이동</h3>
+            <span>{lastDelta ? "최근 Step의 실제 결과" : "다음 순차 실행 예상"}</span>
+          </div>
+          <div className="pc-flow">
+            <div>
+              <span>{lastDelta ? "실행 전 PC" : "현재 PC"}</span>
+              <code>{formatHex(pcBefore)}</code>
+            </div>
+            <span className="pc-flow-arrow" aria-hidden="true">
+              +4 →
+            </span>
+            <div data-current>
+              <span>{lastDelta ? "실행 뒤 PC" : "다음 PC"}</span>
+              <code>{formatHex(pcAfter)}</code>
+            </div>
+          </div>
+          <p>
+            <code>
+              {lastDelta?.instruction.sourceText ??
+                snapshot.currentInstruction?.sourceText ??
+                "실행 완료"}
+            </code>
+            {lastDelta || snapshot.currentInstruction
+              ? ". RV32I 명령어 한 칸은 4바이트입니다."
+              : null}
+          </p>
+        </section>
+      ) : null}
 
       <div className="state-columns">
         {memoryIsPrimary ? (

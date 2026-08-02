@@ -31,7 +31,7 @@ function createStorage(): StorageAdapter & { values: Map<string, string> } {
   };
 }
 
-test("v2 progress starts as a complete, stable mission snapshot", () => {
+test("v3 progress starts as a complete, stable mission snapshot", () => {
   const progress = emptyProgress();
 
   assert.equal(progress.version, PROGRESS_VERSION);
@@ -41,6 +41,10 @@ test("v2 progress starts as a complete, stable mission snapshot", () => {
     assert.deepEqual(mission, {
       status: "not-started",
       predictionAttempts: 0,
+      predictionCorrect: false,
+      predictionSkipped: false,
+      transferAttempts: 0,
+      transferCompleted: false,
       transferPassed: false,
       lastAttemptAt: null,
     });
@@ -57,6 +61,8 @@ test("markMissionProgress merges evidence monotonically without mutation", () =>
   const guided = markMissionProgress(original, "pc-next", {
     status: "guided",
     predictionAttempts: 2,
+    predictionCorrect: true,
+    predictionSkipped: true,
     lastAttemptAt: "2026-07-29T01:02:03+09:00",
   });
 
@@ -64,6 +70,10 @@ test("markMissionProgress merges evidence monotonically without mutation", () =>
   assert.deepEqual(guided.missions["pc-next"], {
     status: "guided",
     predictionAttempts: 2,
+    predictionCorrect: true,
+    predictionSkipped: true,
+    transferAttempts: 0,
+    transferCompleted: false,
     transferPassed: false,
     lastAttemptAt: "2026-07-28T16:02:03.000Z",
   });
@@ -73,15 +83,60 @@ test("markMissionProgress merges evidence monotonically without mutation", () =>
     status: "not-started",
     predictionAttempts: 1,
     predictionAttempt: true,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempt: true,
+    transferCompleted: true,
     transferPassed: true,
     lastAttemptAt: "2026-07-20T00:00:00Z",
   });
   assert.deepEqual(independent.missions["pc-next"], {
     status: "independent",
     predictionAttempts: 3,
+    predictionCorrect: true,
+    predictionSkipped: true,
+    transferAttempts: 1,
+    transferCompleted: true,
     transferPassed: true,
     lastAttemptAt: "2026-07-28T16:02:03.000Z",
   });
+});
+
+test("only a first-attempt transfer success becomes independent", () => {
+  const firstWrong = markMissionProgress(emptyProgress(), "pc-next", {
+    status: "guided",
+    transferAttempt: true,
+    lastAttemptAt: "2026-07-29T00:00:00Z",
+  });
+  const reviewed = markMissionProgress(firstWrong, "pc-next", {
+    transferAttempt: true,
+    transferCompleted: true,
+    transferPassed: true,
+    lastAttemptAt: "2026-07-29T00:01:00Z",
+  });
+
+  assert.deepEqual(reviewed.missions["pc-next"], {
+    status: "guided",
+    predictionAttempts: 0,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: 2,
+    transferCompleted: true,
+    transferPassed: false,
+    lastAttemptAt: "2026-07-29T00:01:00.000Z",
+  });
+
+  const cannotMoveBackwards = markMissionProgress(reviewed, "pc-next", {
+    status: "not-started",
+    predictionAttempts: 0,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: 0,
+    transferCompleted: false,
+    transferPassed: false,
+    lastAttemptAt: "2026-07-20T00:00:00Z",
+  });
+  assert.deepEqual(cannotMoveBackwards, reviewed);
 });
 
 test("setLastMission changes only the resume target", () => {
@@ -110,6 +165,10 @@ test("prediction attempts accumulate without claiming guided completion", () => 
   assert.deepEqual(second.missions["pc-next"], {
     status: "not-started",
     predictionAttempts: 2,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: 0,
+    transferCompleted: false,
     transferPassed: false,
     lastAttemptAt: "2026-07-29T00:01:00.000Z",
   });
@@ -133,7 +192,7 @@ test("v1 completed activities migrate to canonical guided mission evidence", () 
   );
 
   const result = readProgress(storage);
-  assert.equal(result.version, 2);
+  assert.equal(result.version, 3);
   assert.equal(
     result.missions[LEGACY_ACTIVITY_TO_MISSION["tracer-bullet"]].status,
     "guided",
@@ -143,10 +202,14 @@ test("v1 completed activities migrate to canonical guided mission evidence", () 
   assert.equal(result.missions["memory-store-byte"].status, "not-started");
   assert.equal(result.lastMissionId, "memory-address-value");
   assert.equal(result.missions["memory-little-endian"].predictionAttempts, 0);
+  assert.equal(result.missions["memory-little-endian"].predictionCorrect, false);
+  assert.equal(result.missions["memory-little-endian"].predictionSkipped, false);
+  assert.equal(result.missions["memory-little-endian"].transferAttempts, 0);
+  assert.equal(result.missions["memory-little-endian"].transferCompleted, false);
   assert.equal(result.missions["memory-little-endian"].transferPassed, false);
 });
 
-test("v2 reads are sanitized and exports have deterministic ordering", () => {
+test("v2 independent evidence migrates conservatively to reviewed completion", () => {
   const storage = createStorage();
   storage.values.set(
     PROGRESS_KEY,
@@ -171,6 +234,12 @@ test("v2 reads are sanitized and exports have deterministic ordering", () => {
           transferPassed: true,
           lastAttemptAt: "not-a-date",
         },
+        "x-zero-wrap": {
+          status: "independent",
+          predictionAttempts: 1,
+          transferPassed: false,
+          lastAttemptAt: "2026-07-29T10:00:00+09:00",
+        },
       },
       lastMissionId: "unknown",
     }),
@@ -181,13 +250,135 @@ test("v2 reads are sanitized and exports have deterministic ordering", () => {
   assert.deepEqual(result.missions["memory-signed-loads"], {
     status: "guided",
     predictionAttempts: 2,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: 0,
+    transferCompleted: false,
     transferPassed: false,
     lastAttemptAt: "2026-07-29T00:00:00.000Z",
   });
   assert.deepEqual(result.missions["pc-next"], {
+    status: "guided",
+    predictionAttempts: 0,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: 1,
+    transferCompleted: true,
+    transferPassed: false,
+    lastAttemptAt: null,
+  });
+  assert.deepEqual(result.missions["x-zero-wrap"], {
+    status: "guided",
+    predictionAttempts: 1,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: 1,
+    transferCompleted: true,
+    transferPassed: false,
+    lastAttemptAt: "2026-07-29T01:00:00.000Z",
+  });
+  assert.equal(result.lastMissionId, null);
+  assert.equal(exportProgress(storage), `${serializeProgress(result, true)}\n`);
+  assert.deepEqual(
+    Object.keys(JSON.parse(exportProgress(storage)).missions),
+    [...MISSION_IDS],
+  );
+});
+
+test("v3 reads are sanitized and exports have deterministic ordering", () => {
+  const storage = createStorage();
+  storage.values.set(
+    PROGRESS_KEY,
+    JSON.stringify({
+      version: 3,
+      missions: {
+        unknown: {
+          status: "independent",
+          predictionAttempts: 99,
+          predictionCorrect: true,
+          predictionSkipped: true,
+          transferAttempts: 99,
+          transferCompleted: true,
+          transferPassed: true,
+          lastAttemptAt: "2026-01-01",
+        },
+        "memory-signed-loads": {
+          status: "guided",
+          predictionAttempts: 2.9,
+          predictionCorrect: true,
+          predictionSkipped: true,
+          transferAttempts: 2.9,
+          transferCompleted: true,
+          transferPassed: false,
+          lastAttemptAt: "2026-07-29T09:00:00+09:00",
+        },
+        "pc-next": {
+          status: "independent",
+          predictionAttempts: -10,
+          predictionCorrect: "yes",
+          predictionSkipped: 1,
+          transferAttempts: -2,
+          transferCompleted: false,
+          transferPassed: false,
+          lastAttemptAt: "not-a-date",
+        },
+        "memory-store-byte": {
+          status: "not-started",
+          transferAttempts: 0,
+          transferCompleted: false,
+          transferPassed: true,
+        },
+        "memory-partial-store": {
+          status: "independent",
+          transferAttempts: 2,
+          transferCompleted: false,
+          transferPassed: true,
+        },
+      },
+      lastMissionId: "unknown",
+    }),
+  );
+
+  const result = readProgress(storage);
+  assert.deepEqual(Object.keys(result.missions), [...MISSION_IDS]);
+  assert.deepEqual(result.missions["memory-signed-loads"], {
+    status: "guided",
+    predictionAttempts: 2,
+    predictionCorrect: true,
+    predictionSkipped: true,
+    transferAttempts: 2,
+    transferCompleted: true,
+    transferPassed: false,
+    lastAttemptAt: "2026-07-29T00:00:00.000Z",
+  });
+  assert.deepEqual(result.missions["pc-next"], {
+    status: "guided",
+    predictionAttempts: 0,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: 0,
+    transferCompleted: false,
+    transferPassed: false,
+    lastAttemptAt: null,
+  });
+  assert.deepEqual(result.missions["memory-store-byte"], {
     status: "independent",
     predictionAttempts: 0,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: 1,
+    transferCompleted: true,
     transferPassed: true,
+    lastAttemptAt: null,
+  });
+  assert.deepEqual(result.missions["memory-partial-store"], {
+    status: "guided",
+    predictionAttempts: 0,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: 2,
+    transferCompleted: true,
+    transferPassed: false,
     lastAttemptAt: null,
   });
   assert.equal(result.lastMissionId, null);
@@ -198,7 +389,7 @@ test("v2 reads are sanitized and exports have deterministic ordering", () => {
   );
 });
 
-test("storage helpers and the v1 completion wrapper persist v2 data", () => {
+test("storage helpers and the v1 completion wrapper persist v3 data", () => {
   const storage = createStorage();
   saveMissionProgress(storage, "memory-store-byte", {
     predictionAttempt: true,
@@ -207,7 +398,7 @@ test("storage helpers and the v1 completion wrapper persist v2 data", () => {
   const result = completeActivity(storage, "little-endian");
   const persisted = JSON.parse(storage.values.get(PROGRESS_KEY) ?? "{}");
 
-  assert.equal(persisted.version, 2);
+  assert.equal(persisted.version, 3);
   assert.equal(result.missions["memory-store-byte"].predictionAttempts, 1);
   assert.equal(result.missions["memory-little-endian"].status, "guided");
   assert.equal(result.lastMissionId, "memory-little-endian");

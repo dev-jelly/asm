@@ -1,6 +1,6 @@
 export const DATA_BASE = 0x1000;
 export const DATA_SIZE = 0x1000;
-export const PROTOCOL_VERSION = 1 as const;
+export const PROTOCOL_VERSION = 2 as const;
 export const DEFAULT_HISTORY_LIMIT = 256;
 export const MAX_HISTORY_LIMIT = 4096;
 
@@ -156,12 +156,28 @@ export type StepDelta = {
   controlFlow: ControlFlow;
 };
 
+export type InstructionPredictionMetadata =
+  | {
+      effect: "register";
+      destinationRegister: number;
+    }
+  | {
+      effect: "memory";
+    }
+  | {
+      effect: "branch";
+      leftRegister: number;
+      rightRegister: number;
+      target: number;
+    };
+
 export type SerializedInstruction = {
   mnemonic: Mnemonic;
   address: number;
   encoding: number;
   sourceLine: number;
   sourceText: string;
+  prediction: InstructionPredictionMetadata;
 };
 
 export type Snapshot = {

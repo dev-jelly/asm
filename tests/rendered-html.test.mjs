@@ -28,7 +28,7 @@ test("server-renders the Korean product home and real learning interaction", asy
   const html = await response.text();
   assert.match(html, /<html[^>]*lang="ko"/i);
   assert.match(html, /<title>ASM LAB \| 상태 변화로 배우는 RV32I<\/title>/i);
-  assert.match(html, /메모리는 바이트 단위로 움직입니다/);
+  assert.match(html, /한 줄의 코드가 상태를 바꿉니다/);
   assert.equal(html.match(/<h1\b/gi)?.length, 1);
   assert.match(html, /addi x5, x0, 7/);
   assert.match(html, /PC는 다음 명령어를 가리킵니다/);
@@ -39,7 +39,8 @@ test("server-renders the Korean product home and real learning interaction", asy
   assert.match(html, /코드 직접 편집/);
   assert.match(html, /다음 Step에서 가장 중요한 변화/);
   assert.match(html, /잘 모르겠어요\. 결과 보기/);
-  assert.match(html, /시각화를 줄인 새 문제로 확인합니다/);
+  assert.match(html, /새 상황에서 한 번 더 확인합니다/);
+  assert.match(html, /새 문제 RV32I 코드/);
   assert.match(html, /핵심 단계의 결과를 확인하고 프로그램을 완료/);
   assert.match(html, /로그인 없이 시작/);
   assert.match(html, /<button[^>]*disabled[^>]*>Step<\/button>/i);
@@ -146,6 +147,8 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   assert.match(stateView, />레지스터</);
   assert.match(stateView, /<MemoryVisualizer/);
   assert.match(stateView, /상태 변화/);
+  assert.match(stateView, /PC 이동/);
+  assert.match(stateView, /최근 Step의 실제 결과/);
   assert.equal(stateView.match(/role="region"/g)?.length, 1);
   assert.equal(stateView.match(/tabIndex=\{0\}/g)?.length, 1);
   assert.match(stateView, /aria-labelledby="register-title"/);
@@ -162,9 +165,16 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
 
   assert.equal(lab.match(/aria-live="polite"/g)?.length, 1);
   assert.match(lab, /stepIndex: currentStepIndex/);
-  assert.match(lab, /expectedPrediction\(instruction,\s*checkpoint\)/);
+  assert.match(
+    lab,
+    /expectedPrediction\(\s*instruction,\s*checkpoint,\s*visibleSnapshot\?\.registers/,
+  );
   assert.match(lab, /lab\.trace\.find/);
-  assert.match(lab, /delta\.stepIndexBefore === submittedPrediction\.stepIndex/);
+  assert.match(lab, /delta\.stepIndexBefore === comparisonPrediction\.stepIndex/);
+  assert.match(lab, /currentStepIndex === selectedMission\.checkpoint\.stepIndex/);
+  assert.match(lab, /predictionAnnouncement/);
+  assert.match(lab, /predictionSkipped:\s*activeGate\.skipped/);
+  assert.match(lab, /transferAttempt:\s*!evidence\.transferCompleted/);
   assert.ok(
     lab.indexOf("<LabControls") <
       lab.indexOf('<div className="lab-state-panel">'),
@@ -182,7 +192,7 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   assert.match(lab, /window\.history\.pushState/);
   assert.match(lab, /checkpointAttempted/);
   assert.match(lab, /markLocalMissionProgress/);
-  assert.match(lab, /status:\s*"independent"/);
+  assert.match(lab, /transferPassed:\s*correct && firstAttempt/);
   assert.equal(lab.match(/useRv32iWorker\(/g)?.length, 1);
 
   assert.match(hook, /new Worker/);
@@ -216,8 +226,10 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
 
   assert.match(predictionGate, /aria-describedby="prediction-help"/);
   assert.doesNotMatch(predictionGate, /aria-pressed/);
-  assert.match(predictionGate, /checkpoint\?\.choices/);
+  assert.match(predictionGate, /return checkpoint\.choices/);
   assert.match(predictionGate, /checkpoint\?\.prompt/);
+  assert.match(predictionGate, /branch-taken/);
+  assert.match(predictionGate, /branch-not-taken/);
   assert.match(predictionGate, /메모리 주소에 값을 씁니다/);
   assert.match(predictionGate, /PC만 다음 명령어로 이동합니다/);
   assert.match(predictionGate, /잘 모르겠어요\. 결과 보기/);
@@ -229,9 +241,14 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   assert.match(missionNavigator, /aria-label="현재 모듈의 학습 미션"/);
   assert.match(missionNavigator, /aria-current=\{selected \? "step"/);
   assert.match(missionTransfer, /id="practice"/);
-  assert.match(missionTransfer, /독립 문제 확인/);
+  assert.match(missionTransfer, /새 문제 RV32I 코드/);
+  assert.match(missionTransfer, /mission\.transfer\.wrongHint/);
+  assert.match(missionTransfer, /답 확인/);
   assert.match(missionTransfer, /aria-live="polite"/);
   assert.match(missionTransfer, /nextMissionId/);
+  assert.match(progressPanel, /mission\.predictionSkipped/);
+  assert.match(progressPanel, /mission\.transferAttempts/);
+  assert.match(progressPanel, /마지막\s*미션/);
 
   const missionIds = [
     "pc-next",
@@ -263,7 +280,7 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   assert.match(css, /grid-template-areas:[\s\S]*"source state"[\s\S]*"controls state"/);
   assert.match(
     css,
-    /@media \(max-width:\s*760px\)[\s\S]*\.lab-controls \{[\s\S]*position:\s*static/,
+    /@media \(max-width:\s*800px\)[\s\S]*\.lab-controls \{[\s\S]*position:\s*static/,
   );
   assert.doesNotMatch(css, /#fff(?:fff)?\b/i);
 

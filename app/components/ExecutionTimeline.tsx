@@ -98,13 +98,14 @@ export function ExecutionTimeline({ trace }: ExecutionTimelineProps) {
   );
 }
 
-function registerSummary(delta: StepDelta): string {
-  const writes = delta.registerWrites.filter((write) => write.committed);
-  if (!writes.length) return "쓰기 없음";
-  return writes
+export function registerSummary(delta: StepDelta): string {
+  if (!delta.registerWrites.length) return "쓰기 없음";
+  return delta.registerWrites
     .map(
       (write) =>
-        `x${write.register} ${formatHex(write.before)} → ${formatHex(write.after)}`,
+        write.committed
+          ? `x${write.register} ${formatHex(write.before)} → ${formatHex(write.after)}`
+          : `x${write.register} 쓰기 무시, 값 ${formatHex(write.before)} 유지`,
     )
     .join(", ");
 }

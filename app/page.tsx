@@ -174,8 +174,8 @@ export default function Home() {
 
       <footer className="site-footer">
         <p>
-          ASM LAB은 RV32I의 주소 계산과 메모리 상태 변화를 가르치는
-          브라우저 학습 실험실입니다.
+          ASM LAB은 RV32I의 PC, 레지스터, 메모리, 분기 상태 변화를
+          가르치는 브라우저 학습 실험실입니다.
         </p>
         <div>
           <a href="#learn">학습 경로</a>

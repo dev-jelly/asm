@@ -48,6 +48,8 @@ export function LearningLab() {
     useState<MemoryMissionId>(DEFAULT_MISSION.id);
   const missionIdRef = useRef<MemoryMissionId>(DEFAULT_MISSION.id);
   const missionHeadingRef = useRef<HTMLHeadingElement>(null);
+  const completedKeyboardFocusRequestRef = useRef(0);
+  const latestPredictionAnnouncementRef = useRef("");
   const selectedMission = getMemoryMission(missionId) ?? DEFAULT_MISSION;
   const [source, setSource] = useState(DEFAULT_MISSION.source);
   const [draftSource, setDraftSource] = useState(DEFAULT_MISSION.source);
@@ -73,7 +75,10 @@ export function LearningLab() {
   });
   const [submittedPrediction, setSubmittedPrediction] =
     useState<SubmittedPrediction | null>(null);
+  const [checkpointPrediction, setCheckpointPrediction] =
+    useState<SubmittedPrediction | null>(null);
   const [runConfirmed, setRunConfirmed] = useState(false);
+  const [keyboardFocusRequest, setKeyboardFocusRequest] = useState(0);
   const [checkpointAttempted, setCheckpointAttempted] = useState(false);
   const [transferChoice, setTransferChoice] = useState("");
   const [transferResult, setTransferResult] =
@@ -85,20 +90,25 @@ export function LearningLab() {
       : { stepIndex: currentStepIndex, prediction: "", skipped: false };
   const activeCheckpoint =
     !isCustomProgram &&
+    currentStepIndex === selectedMission.checkpoint.stepIndex &&
     visibleSnapshot?.currentInstruction?.sourceLine ===
       selectedMission.checkpoint.sourceLine
       ? selectedMission.checkpoint
       : null;
-  const showingCompletedPrediction =
-    visibleStatus === "completed" && submittedPrediction !== null;
-  const displayedCheckpoint = showingCompletedPrediction
-    ? submittedPrediction.checkpoint
+  const comparisonPrediction =
+    visibleStatus === "completed" && checkpointPrediction
+      ? checkpointPrediction
+      : submittedPrediction;
+  const showingReviewedPrediction =
+    visibleStatus === "completed" && comparisonPrediction !== null;
+  const displayedCheckpoint = showingReviewedPrediction
+    ? comparisonPrediction.checkpoint
     : activeCheckpoint;
-  const displayedPrediction = showingCompletedPrediction
-    ? submittedPrediction.value
+  const displayedPrediction = showingReviewedPrediction
+    ? comparisonPrediction.value
     : activeGate.prediction;
-  const displayedSkipped = showingCompletedPrediction
-    ? submittedPrediction.skipped
+  const displayedSkipped = showingReviewedPrediction
+    ? comparisonPrediction.skipped
     : activeGate.skipped;
   const canReveal = Boolean(activeGate.prediction || activeGate.skipped);
   const canRunMission = isCustomProgram || checkpointAttempted;
@@ -203,10 +213,18 @@ export function LearningLab() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.altKey || event.defaultPrevented) return;
+      if (
+        !event.altKey ||
+        event.defaultPrevented ||
+        lab.commandPending
+      ) {
+        return;
+      }
       const target = event.target as HTMLElement | null;
       if (
-        target?.matches("input, textarea, select, [contenteditable='true']")
+        target?.matches(
+          "textarea, select, [contenteditable='true'], input:not([type='radio']):not([type='checkbox']):not([type='button']):not([type='submit'])",
+        )
       ) {
         return;
       }
@@ -215,14 +233,14 @@ export function LearningLab() {
         visibleStatus === "ready" || visibleStatus === "paused";
       if (key === "s" && canReveal && readyForExecution) {
         event.preventDefault();
-        submitAndRun(lab.step);
+        if (submitAndRun(lab.step)) requestKeyboardFocus();
       } else if (
         key === "b" &&
         visibleStatus !== "running" &&
         (visibleSnapshot?.historyDepth ?? 0) > 0
       ) {
         event.preventDefault();
-        lab.back();
+        if (backLab()) requestKeyboardFocus();
       } else if (
         key === "r" &&
         canReveal &&
@@ -231,10 +249,10 @@ export function LearningLab() {
         readyForExecution
       ) {
         event.preventDefault();
-        submitAndRun(lab.run);
+        if (submitAndRun(lab.run)) requestKeyboardFocus();
       } else if (key === "p" && visibleStatus === "running") {
         event.preventDefault();
-        lab.pause();
+        if (pauseLab()) requestKeyboardFocus();
       } else if (
         event.key === "0" &&
         visibleStatus !== "loading" &&
@@ -242,14 +260,77 @@ export function LearningLab() {
         visibleStatus !== "error"
       ) {
         event.preventDefault();
-        resetLab();
+        if (resetLab()) requestKeyboardFocus();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
-  const submittedDelta = useMemo(
+  useEffect(() => {
+    if (
+      keyboardFocusRequest === completedKeyboardFocusRequestRef.current ||
+      lab.commandPending ||
+      visibleStatus === "loading" ||
+      visibleStatus === "running"
+    ) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const checkedPrediction =
+        document.querySelector<HTMLElement>(
+          ".learning-lab .prediction-gate input[type='radio']:checked:not(:disabled)",
+        );
+      const firstPrediction =
+        document.querySelector<HTMLElement>(
+          ".learning-lab .prediction-gate input[type='radio']:not(:disabled)",
+        );
+      const checkedTransfer =
+        document.querySelector<HTMLElement>(
+          ".learning-lab .mission-transfer input[type='radio']:checked:not(:disabled)",
+        );
+      const firstTransfer =
+        document.querySelector<HTMLElement>(
+          ".learning-lab .mission-transfer input[type='radio']:not(:disabled)",
+        );
+      const target =
+        visibleStatus === "completed"
+          ? checkedTransfer ?? firstTransfer
+          : visibleStatus === "error"
+            ? document.querySelector<HTMLElement>(
+                ".learning-lab [role='alert'] button",
+              )
+            : checkedPrediction ?? firstPrediction;
+      const fallback = document.querySelector<HTMLElement>(
+        ".learning-lab button:not(:disabled)",
+      );
+      (target ?? fallback)?.focus();
+      completedKeyboardFocusRequestRef.current = keyboardFocusRequest;
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    currentStepIndex,
+    keyboardFocusRequest,
+    lab.commandPending,
+    visibleStatus,
+  ]);
+
+  const comparisonDelta = useMemo(
+    () =>
+      comparisonPrediction
+        ? lab.trace.find(
+            (delta) =>
+              delta.stepIndexBefore === comparisonPrediction.stepIndex &&
+              delta.pcBefore === comparisonPrediction.pcBefore &&
+              delta.instruction.sourceLine ===
+                comparisonPrediction.sourceLine,
+          ) ?? null
+        : null,
+    [comparisonPrediction, lab.trace],
+  );
+  const announcementDelta = useMemo(
     () =>
       submittedPrediction
         ? lab.trace.find(
@@ -277,50 +358,125 @@ export function LearningLab() {
     },
     [lab.trace],
   );
-  const submittedCorrect =
+  const comparisonCorrect =
+    comparisonPrediction && !comparisonPrediction.skipped
+      ? comparisonPrediction.value === comparisonPrediction.expected
+      : null;
+  const latestPredictionCorrect =
     submittedPrediction && !submittedPrediction.skipped
       ? submittedPrediction.value === submittedPrediction.expected
       : null;
+  const newPredictionAnnouncement =
+    submittedPrediction && announcementDelta
+      ? submittedPrediction.skipped
+        ? "예측 없이 실제 결과를 확인했습니다."
+        : latestPredictionCorrect
+          ? "예측이 실제 결과와 일치했습니다."
+          : "예측과 실제 결과가 다릅니다."
+      : "";
+  if (visibleStatus === "error") {
+    latestPredictionAnnouncementRef.current = "";
+  } else if (newPredictionAnnouncement) {
+    latestPredictionAnnouncementRef.current =
+      newPredictionAnnouncement;
+  }
+  const predictionAnnouncement =
+    visibleStatus === "running"
+      ? ""
+      : latestPredictionAnnouncementRef.current;
 
   function resetLearningState() {
     setGate({ stepIndex: -1, prediction: "", skipped: false });
+    latestPredictionAnnouncementRef.current = "";
     setSubmittedPrediction(null);
+    setCheckpointPrediction(null);
     setRunConfirmed(false);
     setCheckpointAttempted(false);
     setTransferChoice("");
     setTransferResult(null);
   }
 
-  function submitAndRun(action: () => boolean) {
+  function requestKeyboardFocus() {
+    setKeyboardFocusRequest((request) => request + 1);
+  }
+
+  function submitAndRun(action: () => boolean): boolean {
     const instruction = visibleSnapshot?.currentInstruction;
-    if (!canReveal || !instruction) return;
-    if (!action()) return;
+    if (!canReveal || !instruction) return false;
+    if (!action()) return false;
     const checkpoint = activeCheckpoint;
-    const expected = expectedPrediction(instruction, checkpoint);
-    setSubmittedPrediction({
+    const expected = expectedPrediction(
+      instruction,
+      checkpoint,
+      visibleSnapshot?.registers,
+    );
+    const submission: SubmittedPrediction = {
       value: activeGate.prediction,
       label: activeGate.skipped
         ? "예측하지 않고 실제 결과 확인"
-        : predictionLabel(activeGate.prediction, checkpoint),
+        : predictionLabel(
+            activeGate.prediction,
+            checkpoint,
+            instruction,
+            visibleSnapshot?.registers,
+          ),
       skipped: activeGate.skipped,
       stepIndex: currentStepIndex,
       pcBefore: instruction.address,
       sourceLine: instruction.sourceLine,
       expected,
       checkpoint,
-    });
-    if (checkpoint) {
-      setCheckpointAttempted(true);
-      if (!activeGate.skipped) {
+    };
+    setSubmittedPrediction(submission);
+    if (!isCustomProgram) {
+      if (checkpoint) {
+        setCheckpointPrediction(submission);
+        setCheckpointAttempted(true);
         markLocalMissionProgress(selectedMission.id, {
-          predictionAttempt: true,
+          predictionAttempt: !activeGate.skipped,
+          predictionCorrect:
+            !activeGate.skipped && activeGate.prediction === expected,
+          predictionSkipped: activeGate.skipped,
         });
+      } else {
+        markLocalMissionProgress(selectedMission.id);
       }
     }
+    return true;
   }
 
-  function resetLab() {
-    if (lab.reset()) resetLearningState();
+  function resetLab(): boolean {
+    const accepted = lab.reset();
+    if (accepted) resetLearningState();
+    return accepted;
+  }
+
+  function backLab(): boolean {
+    const accepted = lab.back();
+    if (!accepted) return false;
+    latestPredictionAnnouncementRef.current = "";
+    setSubmittedPrediction(null);
+    return true;
+  }
+
+  function pauseLab(): boolean {
+    const accepted = lab.pause();
+    if (!accepted) return false;
+    latestPredictionAnnouncementRef.current = "";
+    setSubmittedPrediction(null);
+    return true;
+  }
+
+  function restartWorker() {
+    resetLearningState();
+    lab.retry();
+    requestKeyboardFocus();
+  }
+
+  function restoreMissionAfterError() {
+    lab.retry();
+    prepareNewProgram(selectedMission.source);
+    requestKeyboardFocus();
   }
 
   function prepareNewProgram(nextSource: string) {
@@ -375,22 +531,36 @@ export function LearningLab() {
     if (!transferReady || !transferChoice) return;
     const correct =
       transferChoice === selectedMission.transfer.correctChoiceId;
-    setTransferResult(correct ? "correct" : "different");
-    if (correct) {
-      markLocalMissionProgress(selectedMission.id, {
-        status: "independent",
-        transferPassed: true,
-      });
-    }
+    const evidence = progress.missions[selectedMission.id];
+    const firstAttempt = evidence.transferAttempts === 0;
+    setTransferResult(
+      correct
+        ? evidence.transferPassed
+          ? "confirmed"
+          : firstAttempt
+          ? "independent"
+          : "reviewed"
+        : "different",
+    );
+    markLocalMissionProgress(selectedMission.id, {
+      transferAttempt: !evidence.transferCompleted,
+      transferCompleted: correct,
+      transferPassed: correct && firstAttempt,
+      status: correct
+        ? evidence.transferPassed || firstAttempt
+          ? "independent"
+          : "guided"
+        : undefined,
+    });
   }
 
   return (
     <section className="learning-lab" aria-labelledby="lab-title">
       <header className="lab-intro">
-        <h1 id="lab-title">메모리는 바이트 단위로 움직입니다.</h1>
+        <h1 id="lab-title">한 줄의 코드가 상태를 바꿉니다.</h1>
         <p>
-          실행 전에 주소와 값을 예측하고 실제 바이트 변화를 한 단계씩
-          확인하세요.
+          실행 전에 PC, 레지스터, 메모리, 분기를 예측하고 실제 변화를 한
+          단계씩 확인하세요.
         </p>
         <ul className="lab-promises" aria-label="학습 환경 안내">
           <li>로그인 없이 시작</li>
@@ -419,9 +589,13 @@ export function LearningLab() {
         <strong>
           {progress.missions[selectedMission.id].status === "independent"
             ? "혼자 해결"
-            : progress.missions[selectedMission.id].status === "guided"
-              ? "연습 완료"
-              : progress.missions[selectedMission.id].predictionAttempts > 0
+            : progress.missions[selectedMission.id].transferCompleted
+              ? "복습 후 해결"
+              : progress.missions[selectedMission.id].status === "guided"
+                ? "연습 완료"
+                : progress.missions[selectedMission.id].predictionAttempts > 0 ||
+                    progress.missions[selectedMission.id].predictionSkipped ||
+                    progress.missions[selectedMission.id].lastAttemptAt !== null
                 ? "학습 중"
                 : "시작 전"}
         </strong>
@@ -510,6 +684,7 @@ export function LearningLab() {
 
           <PredictionGate
             instruction={visibleSnapshot?.currentInstruction ?? null}
+            registers={visibleSnapshot?.registers ?? []}
             checkpoint={displayedCheckpoint}
             selected={displayedPrediction}
             skipped={displayedSkipped}
@@ -544,16 +719,18 @@ export function LearningLab() {
             aria-live="polite"
             aria-atomic="true"
           >
-            {lab.announcement}
+            {[lab.announcement, predictionAnnouncement]
+              .filter(Boolean)
+              .join(" ")}
           </div>
           <div className="lab-feedback">
-            {submittedPrediction && submittedDelta ? (
+            {comparisonPrediction && comparisonDelta ? (
               <PredictionComparison
-                delta={submittedDelta}
-                predictionLabel={submittedPrediction.label}
-                correct={submittedCorrect}
-                skipped={submittedPrediction.skipped}
-                explanation={submittedPrediction.checkpoint?.explanation}
+                delta={comparisonDelta}
+                predictionLabel={comparisonPrediction.label}
+                correct={comparisonCorrect}
+                skipped={comparisonPrediction.skipped}
+                explanation={comparisonPrediction.checkpoint?.explanation}
               />
             ) : null}
           </div>
@@ -573,10 +750,10 @@ export function LearningLab() {
           runConfirmed={runConfirmed}
           onRunConfirmed={setRunConfirmed}
           onStep={() => submitAndRun(lab.step)}
-          onBack={lab.back}
+          onBack={backLab}
           onReset={resetLab}
           onRun={() => submitAndRun(lab.run)}
-          onPause={lab.pause}
+          onPause={pauseLab}
         />
 
         <div className="lab-state-panel">
@@ -586,13 +763,16 @@ export function LearningLab() {
               <p>{lab.error}</p>
               <p>Worker를 다시 시작하거나 현재 미션으로 복원하세요.</p>
               <div className="lab-error-actions">
-                <button type="button" onClick={lab.retry}>
+                <button
+                  type="button"
+                  onClick={restartWorker}
+                >
                   Worker 다시 시작
                 </button>
                 <button
                   type="button"
                   className="primary-control"
-                  onClick={() => prepareNewProgram(selectedMission.source)}
+                  onClick={restoreMissionAfterError}
                 >
                   미션으로 복원
                 </button>
@@ -636,7 +816,6 @@ export function LearningLab() {
         nextMissionId={nextMissionId}
         onSelect={(choiceId) => {
           setTransferChoice(choiceId);
-          setTransferResult(null);
         }}
         onCheck={checkTransfer}
         onNext={selectNextMission}

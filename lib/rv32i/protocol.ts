@@ -284,13 +284,14 @@ function isSnapshot(value: unknown): value is Snapshot {
     isNonNegativeInteger(value.stepIndex) &&
     isNonNegativeInteger(value.historyDepth) &&
     (value.currentInstruction === null ||
-      isSerializedInstruction(value.currentInstruction))
+      isSerializedInstruction(value.currentInstruction, value.pc))
   );
 }
 
 function isSerializedInstruction(
   value: unknown,
-): value is Snapshot["currentInstruction"] {
+  expectedPc: number,
+): value is NonNullable<Snapshot["currentInstruction"]> {
   return (
     isRecord(value) &&
     hasOnlyKeys(value, [
@@ -299,13 +300,98 @@ function isSerializedInstruction(
       "encoding",
       "sourceLine",
       "sourceText",
+      "prediction",
     ]) &&
     isMnemonic(value.mnemonic) &&
     isUint32(value.address) &&
+    value.address === expectedPc &&
     isUint32(value.encoding) &&
+    encodingMatchesMnemonic(value.mnemonic, value.encoding) &&
     isPositiveInteger(value.sourceLine) &&
-    typeof value.sourceText === "string"
+    typeof value.sourceText === "string" &&
+    isInstructionPrediction(
+      value.prediction,
+      value.mnemonic,
+      value.encoding,
+      value.address,
+    )
   );
+}
+
+function isInstructionPrediction(
+  value: unknown,
+  mnemonic: Instruction["mnemonic"],
+  encoding: number,
+  address: number,
+): boolean {
+  if (!isRecord(value) || typeof value.effect !== "string") return false;
+  if (value.effect === "register") {
+    return (
+      (mnemonic === "addi" ||
+        mnemonic === "lb" ||
+        mnemonic === "lbu" ||
+        mnemonic === "lh" ||
+        mnemonic === "lhu" ||
+        mnemonic === "lw") &&
+      hasOnlyKeys(value, ["effect", "destinationRegister"]) &&
+      isRegisterIndex(value.destinationRegister) &&
+      value.destinationRegister === ((encoding >>> 7) & 0x1f)
+    );
+  }
+  if (value.effect === "memory") {
+    return (
+      (mnemonic === "sb" || mnemonic === "sh" || mnemonic === "sw") &&
+      hasOnlyKeys(value, ["effect"])
+    );
+  }
+  return (
+    mnemonic === "beq" &&
+    value.effect === "branch" &&
+    hasOnlyKeys(value, [
+      "effect",
+      "leftRegister",
+      "rightRegister",
+      "target",
+    ]) &&
+    isRegisterIndex(value.leftRegister) &&
+    isRegisterIndex(value.rightRegister) &&
+    isUint32(value.target) &&
+    value.leftRegister === ((encoding >>> 15) & 0x1f) &&
+    value.rightRegister === ((encoding >>> 20) & 0x1f) &&
+    value.target === decodeBranchTarget(address, encoding)
+  );
+}
+
+function encodingMatchesMnemonic(
+  mnemonic: Instruction["mnemonic"],
+  encoding: number,
+): boolean {
+  const opcode = encoding & 0x7f;
+  const funct3 = (encoding >>> 12) & 0x7;
+  const expected = {
+    addi: [0x13, 0],
+    lb: [0x03, 0],
+    lh: [0x03, 1],
+    lw: [0x03, 2],
+    lbu: [0x03, 4],
+    lhu: [0x03, 5],
+    sb: [0x23, 0],
+    sh: [0x23, 1],
+    sw: [0x23, 2],
+    beq: [0x63, 0],
+  } as const;
+  const [expectedOpcode, expectedFunct3] = expected[mnemonic];
+  return opcode === expectedOpcode && funct3 === expectedFunct3;
+}
+
+function decodeBranchTarget(address: number, encoding: number): number {
+  let immediate =
+    (((encoding >>> 31) & 0x1) << 12) |
+    (((encoding >>> 7) & 0x1) << 11) |
+    (((encoding >>> 25) & 0x3f) << 5) |
+    (((encoding >>> 8) & 0xf) << 1);
+  if ((immediate & 0x1000) !== 0) immediate |= ~0x1fff;
+  return (address + immediate) >>> 0;
 }
 
 function isStepDelta(value: unknown): value is StepDelta {

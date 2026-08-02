@@ -395,7 +395,7 @@ export function MemoryVisualizer({
       </div>
 
       {selectedUnit ? (
-        <div className="memory-explanation" aria-live="polite">
+        <div className="memory-explanation">
           <div>
             <span className="state-label">선택한 {UNIT_LABELS[selectedUnit.width as UnitSize]}</span>
             <strong>{formatHex(selectedUnit.address)}</strong>

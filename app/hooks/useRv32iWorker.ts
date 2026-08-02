@@ -52,6 +52,7 @@ export function useRv32iWorker(
   );
   const [workerGeneration, setWorkerGeneration] = useState(0);
   const workerRef = useRef<Worker | null>(null);
+  const traceRef = useRef<StepDelta[]>([]);
   const runIdRef = useRef("");
   const commandSequenceRef = useRef(0);
   const responseSequenceRef = useRef(0);
@@ -61,13 +62,21 @@ export function useRv32iWorker(
   const optionsKey = useMemo(() => JSON.stringify(options ?? {}), [options]);
   const retry = useCallback(() => {
     pendingCommandIdRef.current = null;
+    traceRef.current = [];
+    setStatus("loading");
+    setSnapshot(null);
     setCommandPending(false);
     setLoadedRequestId(null);
+    setLastDelta(null);
+    setTrace([]);
+    setError(null);
+    setAnnouncement("RV32I 실험실을 준비하고 있습니다.");
     setWorkerGeneration((generation) => generation + 1);
   }, []);
 
   useEffect(() => {
     let disposed = false;
+    traceRef.current = [];
     runDeltasRef.current = [];
     runInProgressRef.current = false;
     pendingCommandIdRef.current = null;
@@ -84,6 +93,8 @@ export function useRv32iWorker(
         setStatus(() => "error");
         setLoadedRequestId(null);
         setCommandPending(false);
+        setLastDelta(null);
+        setTrace([]);
         setError("실행 Worker를 시작하지 못했습니다. 다시 시도해 주세요.");
         setAnnouncement("실행 Worker를 시작하지 못했습니다.");
       });
@@ -143,12 +154,11 @@ export function useRv32iWorker(
         return;
       }
       responseSequenceRef.current = response.seq;
-      if (
+      const completesPendingCommand =
         response.commandId === pendingCommandIdRef.current &&
-        (response.type === "ERROR" || response.reason !== "run-chunk")
-      ) {
+        (response.type === "ERROR" || response.reason !== "run-chunk");
+      if (completesPendingCommand) {
         pendingCommandIdRef.current = null;
-        setCommandPending(false);
       }
 
       if (response.type === "ERROR") {
@@ -159,12 +169,17 @@ export function useRv32iWorker(
         if (committedDeltas.length) {
           setLastDelta(committedDeltas.at(-1) ?? null);
           setTrace((current) => appendTrace(current, committedDeltas));
+          traceRef.current = appendTrace(
+            traceRef.current,
+            committedDeltas,
+          );
         }
         if (response.snapshot) setSnapshot(response.snapshot);
         if (!response.snapshot) setLoadedRequestId(null);
         setStatus("error");
         setError(response.message);
         setAnnouncement(summarizeError(response.message, fullRunDeltas));
+        if (completesPendingCommand) setCommandPending(false);
         runDeltasRef.current = [];
         runInProgressRef.current = false;
         return;
@@ -177,17 +192,25 @@ export function useRv32iWorker(
       if (response.delta) {
         setLastDelta(response.delta);
         setTrace((current) => appendTrace(current, [response.delta as StepDelta]));
+        traceRef.current = appendTrace(traceRef.current, [
+          response.delta as StepDelta,
+        ]);
       } else if (response.deltas?.length) {
         const finalDelta = response.deltas.at(-1) ?? null;
         setLastDelta(finalDelta);
         setTrace((current) => appendTrace(current, response.deltas!));
+        traceRef.current = appendTrace(traceRef.current, response.deltas);
       } else if (response.reason === "back") {
-        setLastDelta(null);
-        setTrace((current) => current.slice(0, -1));
+        const nextTrace = traceAfterBack(traceRef.current);
+        traceRef.current = nextTrace;
+        setLastDelta(nextTrace.at(-1) ?? null);
+        setTrace(nextTrace);
       } else if (response.reason === "reset" || response.reason === "loaded") {
+        traceRef.current = [];
         setLastDelta(null);
         setTrace([]);
       }
+      if (completesPendingCommand) setCommandPending(false);
 
       if (response.reason === "run-started") {
         runDeltasRef.current = [];
@@ -406,6 +429,10 @@ export function summarizeDeltaBatch(
         .join(", ")}를 읽었습니다.`
     : "";
   return `${deltas.length}개 명령어를 실행했습니다. 레지스터 쓰기 ${registerWrites}회, 메모리 읽기 ${memoryReads}회, 메모리 쓰기 ${memoryWrites}회. 현재 PC ${formatHex(pc)}.${warningSummary}`;
+}
+
+export function traceAfterBack(trace: readonly StepDelta[]): StepDelta[] {
+  return trace.slice(0, -1);
 }
 
 function summarizeError(

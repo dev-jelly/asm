@@ -689,6 +689,85 @@ test("protocol guards validate nested commands and responses", () => {
   controller.handle(command("STEP"));
 
   assert.ok(responses.every(isWorkerResponse));
+  const loaded = responses[0];
+  assert.equal(loaded?.type, "STATE");
+  if (
+    loaded?.type === "STATE" &&
+    loaded.snapshot.currentInstruction
+  ) {
+    assert.deepEqual(loaded.snapshot.currentInstruction.prediction, {
+      effect: "register",
+      destinationRegister: 5,
+    });
+    const malformedPrediction = structuredClone(loaded) as unknown as {
+      snapshot: {
+        currentInstruction: {
+          prediction: unknown;
+        };
+      };
+    };
+    malformedPrediction.snapshot.currentInstruction.prediction = {
+      effect: "register",
+      destinationRegister: 32,
+    };
+    assert.equal(isWorkerResponse(malformedPrediction), false);
+
+    const wrongEffect = structuredClone(loaded);
+    wrongEffect.snapshot.currentInstruction!.prediction = {
+      effect: "memory",
+    };
+    assert.equal(isWorkerResponse(wrongEffect), false);
+
+    const wrongDestination = structuredClone(loaded);
+    wrongDestination.snapshot.currentInstruction!.prediction = {
+      effect: "register",
+      destinationRegister: 6,
+    };
+    assert.equal(isWorkerResponse(wrongDestination), false);
+
+    const wrongAddress = structuredClone(loaded);
+    wrongAddress.snapshot.currentInstruction!.address = 4;
+    assert.equal(isWorkerResponse(wrongAddress), false);
+  } else {
+    assert.fail("expected a loaded state with prediction metadata");
+  }
+
+  const branchResponses: WorkerResponse[] = [];
+  const branchController = new Rv32iWorkerController((response) =>
+    branchResponses.push(response),
+  );
+  branchController.handle(
+    command("LOAD", {
+      source: `beq x5, x6, target
+addi x7, x0, 1
+target: addi x8, x0, 2`,
+    }),
+  );
+  const branchLoaded = branchResponses[0];
+  assert.equal(branchLoaded?.type, "STATE");
+  if (
+    branchLoaded?.type === "STATE" &&
+    branchLoaded.snapshot.currentInstruction?.prediction.effect ===
+      "branch"
+  ) {
+    assert.deepEqual(branchLoaded.snapshot.currentInstruction.prediction, {
+      effect: "branch",
+      leftRegister: 5,
+      rightRegister: 6,
+      target: 8,
+    });
+    const wrongBranch = structuredClone(branchLoaded);
+    wrongBranch.snapshot.currentInstruction!.prediction = {
+      effect: "branch",
+      leftRegister: 5,
+      rightRegister: 7,
+      target: 4,
+    };
+    assert.equal(isWorkerResponse(wrongBranch), false);
+  } else {
+    assert.fail("expected branch prediction metadata");
+  }
+
   const completed = responses.at(-1);
   assert.equal(completed?.type, "STATE");
   if (completed?.type === "STATE" && completed.delta) {

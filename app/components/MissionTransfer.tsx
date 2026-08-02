@@ -5,7 +5,12 @@ import type {
   MemoryMissionId,
 } from "../content/memoryMissions";
 
-type TransferResult = "correct" | "different" | null;
+type TransferResult =
+  | "independent"
+  | "reviewed"
+  | "confirmed"
+  | "different"
+  | null;
 
 type MissionTransferProps = {
   mission: MemoryMission;
@@ -28,6 +33,11 @@ export function MissionTransfer({
   onCheck,
   onNext,
 }: MissionTransferProps) {
+  const completed =
+    result === "independent" ||
+    result === "reviewed" ||
+    result === "confirmed";
+
   return (
     <section
       className="mission-transfer"
@@ -35,15 +45,32 @@ export function MissionTransfer({
       aria-labelledby="mission-transfer-title"
     >
       <div>
-        <h2 id="mission-transfer-title">시각화를 줄인 새 문제로 확인합니다.</h2>
+        <h2 id="mission-transfer-title">새 상황에서 한 번 더 확인합니다.</h2>
         <p>
-          실행에서 확인한 규칙을 다른 값에 적용하면 이 미션을 혼자 해결한
-          것으로 기록합니다.
+          첫 시도에 맞히면 혼자 해결, 힌트를 확인한 뒤 맞히면 복습 후 해결로
+          기록합니다.
         </p>
       </div>
 
       <div className="mission-transfer-activity">
-        <fieldset disabled={!ready || result === "correct"}>
+        <section
+          className="transfer-scenario"
+          aria-labelledby={`transfer-scenario-${mission.id}`}
+        >
+          <h3 id={`transfer-scenario-${mission.id}`}>새 문제 조건</h3>
+          <pre aria-label="새 문제 RV32I 코드">
+            <code>{mission.transfer.scenario.source}</code>
+          </pre>
+          {mission.transfer.scenario.setup.length ? (
+            <ul aria-label="새 문제 초기 상태">
+              {mission.transfer.scenario.setup.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+
+        <fieldset disabled={!ready || completed}>
           <legend>{mission.transfer.prompt}</legend>
           {!ready ? (
             <p className="field-help">
@@ -70,12 +97,12 @@ export function MissionTransfer({
           <button
             type="button"
             className="primary-control"
-            disabled={!ready || !selected || result === "correct"}
+            disabled={!ready || !selected || completed}
             onClick={onCheck}
           >
-            독립 문제 확인
+            답 확인
           </button>
-          {result === "correct" && nextMissionId ? (
+          {completed && nextMissionId ? (
             <button type="button" onClick={() => onNext(nextMissionId)}>
               다음 미션
             </button>
@@ -89,17 +116,34 @@ export function MissionTransfer({
           aria-atomic="true"
           data-result={result ?? undefined}
         >
-          {result ? (
+          {result === "independent" ? (
             <>
-              <strong>
-                {result === "correct"
-                  ? "새 문제를 해결했습니다."
-                  : "다시 확인할 규칙이 있습니다."}
-              </strong>
+              <strong>첫 시도에 혼자 해결했습니다.</strong>
               <p>{mission.transfer.explanation}</p>
             </>
+          ) : result === "reviewed" ? (
+            <>
+              <strong>복습 후 해결했습니다.</strong>
+              <p>{mission.transfer.explanation}</p>
+            </>
+          ) : result === "confirmed" ? (
+            <>
+              <strong>다시 정답입니다.</strong>
+              <p>
+                이 미션은 이전 첫 시도 결과에 따라 혼자 해결 상태를
+                유지합니다. {mission.transfer.explanation}
+              </p>
+            </>
+          ) : result === "different" ? (
+            <>
+              <strong>한 번 더 생각해 보세요.</strong>
+              <p>{mission.transfer.wrongHint}</p>
+            </>
           ) : (
-            <p>실행을 완료한 뒤 다른 값에서도 같은 규칙이 성립하는지 확인합니다.</p>
+            <p>
+              실행을 완료하면 새 코드와 초기 상태에 같은 규칙을 적용해 봅니다.
+              오답일 때는 정답 대신 힌트만 제공합니다.
+            </p>
           )}
         </div>
       </div>

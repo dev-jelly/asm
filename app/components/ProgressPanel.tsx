@@ -98,10 +98,21 @@ export function ProgressPanel() {
   const started = Object.values(state.data.missions).filter(
     (mission) =>
       mission.status !== "not-started" ||
-      mission.predictionAttempts > 0,
+      mission.predictionAttempts > 0 ||
+      mission.predictionSkipped ||
+      mission.transferAttempts > 0 ||
+      mission.transferCompleted ||
+      mission.lastAttemptAt !== null,
   ).length;
   const independent = Object.values(state.data.missions).filter(
-    (mission) => mission.status === "independent",
+    (mission) =>
+      mission.status === "independent" && mission.transferPassed,
+  ).length;
+  const reviewed = Object.values(state.data.missions).filter(
+    (mission) =>
+      mission.status === "guided" &&
+      mission.transferCompleted &&
+      !mission.transferPassed,
   ).length;
 
   return (
@@ -110,19 +121,23 @@ export function ProgressPanel() {
         <h2 id="progress-title">로그인 없이 이 브라우저에 저장합니다.</h2>
         <p>
           계정이나 서버 저장소는 사용하지 않습니다. 미션별 연습 결과와 마지막
-          위치를 이 기기에 기록합니다.
+          미션을 이 기기에 기록합니다.
         </p>
       </div>
-      <div className="progress-detail" aria-live="polite">
+      <div className="progress-detail">
         {state.status === "loading" ? (
-          <p>진도를 불러오는 중입니다.</p>
+          <p role="status">진도를 불러오는 중입니다.</p>
         ) : state.status === "unavailable" ? (
-          <p className="warning-text">
+          <p className="warning-text" role="status">
             이 브라우저에서는 기기 진도를 저장할 수 없습니다.
           </p>
         ) : (
           <>
-            <p className="progress-summary">
+            <p
+              className="progress-summary"
+              aria-live="polite"
+              aria-atomic="true"
+            >
               <strong>
                 {started === 0
                   ? "아직 시작한 미션이 없습니다."
@@ -131,7 +146,8 @@ export function ProgressPanel() {
                     : "RV32I 학습 경로를 진행 중입니다."}
               </strong>
               <span>
-                시작한 미션 {started}개, 그중 혼자 해결 {independent}개
+                시작한 미션 {started}개, 그중 혼자 해결 {independent}개, 복습 후
+                해결 {reviewed}개
               </span>
             </p>
             <div className="progress-modules">
@@ -144,24 +160,39 @@ export function ProgressPanel() {
                   <ul className="progress-list">
                     {getMemoryMissionsByModule(module.id).map((mission) => {
                       const evidence = state.data.missions[mission.id];
+                      const reviewedAfterAttempt =
+                        evidence.status === "guided" &&
+                        evidence.transferCompleted &&
+                        !evidence.transferPassed;
+                      const startedMission =
+                        evidence.status !== "not-started" ||
+                        evidence.predictionAttempts > 0 ||
+                        evidence.predictionSkipped ||
+                        evidence.transferAttempts > 0 ||
+                        evidence.transferCompleted ||
+                        evidence.lastAttemptAt !== null;
                       const statusLabel =
                         evidence.status === "independent"
                           ? "혼자 해결"
-                          : evidence.status === "guided"
-                            ? "연습 완료"
-                            : evidence.predictionAttempts > 0
-                              ? "학습 중"
-                              : "시작 전";
+                          : reviewedAfterAttempt
+                            ? "복습 후 해결"
+                            : evidence.status === "guided"
+                              ? "연습 완료"
+                              : startedMission
+                                ? "학습 중"
+                                : "시작 전";
                       return (
                         <li key={mission.id}>
                           <span aria-hidden="true">
                             {evidence.status === "independent"
                               ? "✓"
-                              : evidence.status === "guided"
-                                ? "△"
-                                : evidence.predictionAttempts > 0
-                                  ? "◐"
-                                  : "○"}
+                              : reviewedAfterAttempt
+                                ? "↺"
+                                : evidence.status === "guided"
+                                  ? "△"
+                                  : startedMission
+                                    ? "◐"
+                                    : "○"}
                           </span>
                           <span>{mission.title}</span>
                           <strong>{statusLabel}</strong>
@@ -183,7 +214,9 @@ export function ProgressPanel() {
                 type="button"
                 className="text-button danger-action"
                 onClick={resetDeviceProgress}
-                disabled={started === 0}
+                disabled={
+                  started === 0 && state.data.lastMissionId === null
+                }
               >
                 {confirmingReset ? "정말 진도 지우기" : "이 기기의 진도 지우기"}
               </button>

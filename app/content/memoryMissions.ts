@@ -29,6 +29,18 @@ export type MemoryMissionQuestion = {
 
 export type MemoryMissionCheckpoint = MemoryMissionQuestion & {
   sourceLine: number;
+  stepIndex: number;
+};
+
+export type MemoryMissionTransferScenario = {
+  source: string;
+  setup: readonly string[];
+  options: MachineOptions;
+};
+
+export type MemoryMissionTransfer = MemoryMissionQuestion & {
+  scenario: MemoryMissionTransferScenario;
+  wrongHint: string;
 };
 
 export type MemoryMissionFocus = {
@@ -49,7 +61,7 @@ export type MemoryMission = {
   options: MachineOptions;
   focus: MemoryMissionFocus;
   checkpoint: MemoryMissionCheckpoint;
-  transfer: MemoryMissionQuestion;
+  transfer: MemoryMissionTransfer;
 };
 
 export const MEMORY_MISSIONS: readonly MemoryMission[] = [
@@ -71,6 +83,7 @@ addi x6, x5, 1`,
     },
     checkpoint: {
       sourceLine: 1,
+      stepIndex: 0,
       prompt: "1행을 실행한 직후 PC는 어디를 가리킬까요?",
       choices: [
         { id: "pc-0", label: "0x00000000" },
@@ -82,13 +95,24 @@ addi x6, x5, 1`,
         "RV32I 명령어는 4바이트입니다. 분기가 없는 첫 명령어 뒤의 PC는 0x00000004입니다.",
     },
     transfer: {
-      prompt: "순차 명령어 세 개를 모두 실행하면 완료 PC는 얼마일까요?",
+      scenario: {
+        source: `addi x7, x0, 1
+addi x8, x7, 2
+addi x9, x8, 3`,
+        setup: [
+          "시작 PC = 0x00000000",
+          "각 RV32I 명령어의 길이 = 4바이트",
+        ],
+        options: {},
+      },
+      prompt: "새 코드의 세 명령어를 모두 실행하면 완료 PC는 얼마일까요?",
       choices: [
         { id: "three-4", label: "0x00000004" },
         { id: "three-8", label: "0x00000008" },
         { id: "three-12", label: "0x0000000c" },
       ],
       correctChoiceId: "three-12",
+      wrongHint: "실행한 명령어 수와 명령어 한 개의 바이트 길이를 따로 세어 보세요.",
       explanation:
         "PC는 명령어마다 4씩 이동하므로 세 명령어 뒤에는 12인 0x0000000c가 됩니다.",
     },
@@ -113,6 +137,7 @@ addi x5, x5, 1`,
     },
     checkpoint: {
       sourceLine: 1,
+      stepIndex: 0,
       prompt: "1행이 x0에 1을 쓰려고 한 뒤 x0의 값은 무엇일까요?",
       choices: [
         { id: "zero-stays", label: "0x00000000" },
@@ -124,15 +149,23 @@ addi x5, x5, 1`,
         "x0에 대한 쓰기는 커밋되지 않습니다. x0는 언제나 0을 읽습니다.",
     },
     transfer: {
-      prompt: "초기값이 0xffffffff인 x5에 1을 더하면 무엇이 남을까요?",
+      scenario: {
+        source: "addi x7, x7, 3",
+        setup: ["x7 = 0xfffffffe", "x7은 32비트 레지스터"],
+        options: {
+          initialRegisters: { 7: 0xfffffffe },
+        },
+      },
+      prompt: "새 코드가 x7에 3을 더하면 어떤 값이 남을까요?",
       choices: [
-        { id: "wrap-zero", label: "0x00000000" },
-        { id: "wrap-max", label: "0xffffffff" },
-        { id: "wrap-wide", label: "0x100000000" },
+        { id: "wrap-one", label: "0x00000001" },
+        { id: "wrap-max", label: "0xfffffffe" },
+        { id: "wrap-wide", label: "0x100000001" },
       ],
-      correctChoiceId: "wrap-zero",
+      correctChoiceId: "wrap-one",
+      wrongHint: "32비트 경계를 넘어간 가장 높은 비트가 레지스터에 남는지 확인해 보세요.",
       explanation:
-        "레지스터는 32비트만 보관합니다. 가장 높은 값을 넘긴 비트는 버려져 0이 됩니다.",
+        "0xfffffffe에 3을 더한 결과의 33번째 비트는 버려집니다. x7에는 낮은 32비트인 0x00000001만 남습니다.",
     },
   },
   {
@@ -157,6 +190,7 @@ lw x6, 0(x10)`,
     },
     checkpoint: {
       sourceLine: 2,
+      stepIndex: 1,
       prompt: "2행까지 실행했을 때 x5와 x6에는 무엇이 있을까요?",
       choices: [
         {
@@ -177,15 +211,41 @@ lw x6, 0(x10)`,
         "addi는 x10의 주소를 x5로 복사합니다. lw는 그 주소부터 4바이트를 읽어 x6에 42를 씁니다.",
     },
     transfer: {
-      prompt: "같은 주소의 워드가 7로 바뀌면 어떤 값이 달라질까요?",
+      scenario: {
+        source: `addi x7, x10, 4
+lw x8, 4(x10)`,
+        setup: [
+          "x10 = 0x00001000",
+          "0x00001004부터의 네 바이트 = 35 00 00 00",
+        ],
+        options: {
+          initialMemory: [
+            {
+              address: DATA_BASE + 4,
+              bytes: [0x35, 0x00, 0x00, 0x00],
+            },
+          ],
+        },
+      },
+      prompt: "새 코드를 실행한 뒤 x7과 x8에는 무엇이 있을까요?",
       choices: [
-        { id: "only-x5", label: "x5만 7로 바뀜" },
-        { id: "only-x6", label: "x6만 7로 바뀜" },
-        { id: "both-seven", label: "x5와 x6이 모두 7로 바뀜" },
+        {
+          id: "new-address-then-value",
+          label: "x7 = 0x00001004, x8 = 0x00000035",
+        },
+        {
+          id: "new-value-then-address",
+          label: "x7 = 0x00000035, x8 = 0x00001004",
+        },
+        {
+          id: "new-both-address",
+          label: "x7 = x8 = 0x00001004",
+        },
       ],
-      correctChoiceId: "only-x6",
+      correctChoiceId: "new-address-then-value",
+      wrongHint: "addi가 계산한 주소와 lw가 그 주소에서 읽은 값을 따로 추적해 보세요.",
       explanation:
-        "주소는 그대로 0x00001000입니다. 그 주소에서 lw가 읽는 값만 7로 달라집니다.",
+        "addi는 기준 주소에 4를 더한 0x00001004를 x7에 씁니다. lw는 그 주소의 워드 0x00000035를 x8에 씁니다.",
     },
   },
   {
@@ -210,6 +270,7 @@ lw x6, 0(x10)`,
     },
     checkpoint: {
       sourceLine: 1,
+      stepIndex: 0,
       prompt: "이 sb가 바꾸는 주소와 바이트는 무엇일까요?",
       choices: [
         { id: "byte-correct", label: "0x00001001에 0x44" },
@@ -221,15 +282,33 @@ lw x6, 0(x10)`,
         "유효 주소는 x10 + 1입니다. sb는 x5의 가장 낮은 바이트 0x44만 그 주소에 씁니다.",
     },
     transfer: {
-      prompt: "같은 x5로 sb x5, 3(x10)을 실행하면 무엇이 바뀔까요?",
+      scenario: {
+        source: "sb x7, 2(x10)",
+        setup: [
+          "x7 = 0xa1b2c3d4",
+          "x10 = 0x00001000",
+          "0x00001000부터의 네 바이트 = 10 20 30 40",
+        ],
+        options: {
+          initialRegisters: { 7: 0xa1b2c3d4 },
+          initialMemory: [
+            {
+              address: DATA_BASE,
+              bytes: [0x10, 0x20, 0x30, 0x40],
+            },
+          ],
+        },
+      },
+      prompt: "새 sb가 바꾸는 주소와 바이트는 무엇일까요?",
       choices: [
-        { id: "offset-three", label: "0x00001003 한 칸이 0x44로 바뀜" },
-        { id: "four-bytes", label: "0x00001000부터 네 칸이 모두 바뀜" },
-        { id: "offset-value", label: "0x00000003 주소가 0x44로 바뀜" },
+        { id: "new-byte-correct", label: "0x00001002 한 칸이 0xd4로 바뀜" },
+        { id: "new-byte-high", label: "0x00001002 한 칸이 0xa1로 바뀜" },
+        { id: "new-byte-base", label: "0x00001000 한 칸이 0xd4로 바뀜" },
       ],
-      correctChoiceId: "offset-three",
+      correctChoiceId: "new-byte-correct",
+      wrongHint: "offset으로 유효 주소를 먼저 구한 뒤 레지스터의 어느 8비트를 저장하는지 확인하세요.",
       explanation:
-        "offset은 저장할 값이 아니라 기준 주소에 더할 거리입니다. sb의 폭은 언제나 1바이트입니다.",
+        "유효 주소는 0x00001000 + 2인 0x00001002입니다. sb는 x7의 낮은 바이트 0xd4 하나만 저장합니다.",
     },
   },
   {
@@ -251,6 +330,7 @@ lw x6, 0(x10)`,
     },
     checkpoint: {
       sourceLine: 1,
+      stepIndex: 0,
       prompt: "sw 뒤에 0x1000부터 보이는 네 바이트의 순서는 무엇일까요?",
       choices: [
         { id: "little", label: "78 56 34 12" },
@@ -262,15 +342,23 @@ lw x6, 0(x10)`,
         "little-endian은 가장 낮은 8비트 0x78을 가장 낮은 주소에 둡니다.",
     },
     transfer: {
-      prompt: "저장 직후 같은 주소를 lw로 읽으면 어떤 워드가 복원될까요?",
+      scenario: {
+        source: "sw x7, 0(x10)",
+        setup: ["x7 = 0xa1b2c3d4", "x10 = 0x00001000"],
+        options: {
+          initialRegisters: { 7: 0xa1b2c3d4 },
+        },
+      },
+      prompt: "새 워드를 저장하면 0x1000부터 네 바이트는 어떤 순서일까요?",
       choices: [
-        { id: "word-original", label: "0x12345678" },
-        { id: "word-reversed", label: "0x78563412" },
-        { id: "word-byte", label: "0x00000078" },
+        { id: "new-little", label: "d4 c3 b2 a1" },
+        { id: "new-big", label: "a1 b2 c3 d4" },
+        { id: "new-repeat", label: "d4 d4 d4 d4" },
       ],
-      correctChoiceId: "word-original",
+      correctChoiceId: "new-little",
+      wrongHint: "가장 낮은 주소에 워드의 어느 바이트가 놓이는지부터 정해 보세요.",
       explanation:
-        "lw도 같은 little-endian 규칙으로 네 바이트를 조립하므로 원래 워드가 복원됩니다.",
+        "little-endian에서는 가장 낮은 8비트 0xd4부터 저장하므로 d4 c3 b2 a1 순서가 됩니다.",
     },
   },
   {
@@ -296,6 +384,7 @@ lw x6, 0(x10)`,
     },
     checkpoint: {
       sourceLine: 1,
+      stepIndex: 0,
       prompt: "1행의 sh 뒤에 워드의 네 바이트는 어떻게 될까요?",
       choices: [
         { id: "partial-correct", label: "11 22 dd cc" },
@@ -307,15 +396,34 @@ lw x6, 0(x10)`,
         "sh는 x5의 낮은 16비트 0xccdd만 씁니다. offset 2이므로 주소 0x1002와 0x1003에 dd cc가 놓입니다.",
     },
     transfer: {
-      prompt: "이어서 lw x6, 0(x10)을 실행하면 x6은 무엇일까요?",
+      scenario: {
+        source: `sh x7, 0(x10)
+lw x8, 0(x10)`,
+        setup: [
+          "x7 = 0x1234abcd",
+          "x10 = 0x00001000",
+          "0x00001000부터의 네 바이트 = 11 22 33 44",
+        ],
+        options: {
+          initialRegisters: { 7: 0x1234abcd },
+          initialMemory: [
+            {
+              address: DATA_BASE,
+              bytes: [0x11, 0x22, 0x33, 0x44],
+            },
+          ],
+        },
+      },
+      prompt: "새 코드의 두 명령어를 실행한 뒤 x8은 무엇일까요?",
       choices: [
-        { id: "partial-word", label: "0xccdd2211" },
-        { id: "source-word", label: "0xaabbccdd" },
-        { id: "old-word", label: "0x44332211" },
+        { id: "new-partial-word", label: "0x4433abcd" },
+        { id: "new-source-word", label: "0x1234abcd" },
+        { id: "new-old-word", label: "0x44332211" },
       ],
-      correctChoiceId: "partial-word",
+      correctChoiceId: "new-partial-word",
+      wrongHint: "sh가 바꾸는 두 바이트와 그대로 남는 두 바이트를 먼저 나누어 적어 보세요.",
       explanation:
-        "남은 네 바이트 11 22 dd cc를 little-endian 워드로 조립하면 0xccdd2211입니다.",
+        "sh는 낮은 두 바이트를 cd ab로 바꾸고 33 44를 보존합니다. cd ab 33 44를 lw로 조립하면 0x4433abcd입니다.",
     },
   },
   {
@@ -338,6 +446,7 @@ lbu x6, 0(x10)`,
     },
     checkpoint: {
       sourceLine: 1,
+      stepIndex: 0,
       prompt: "lb가 바이트 0x80을 x5에 읽으면 어떤 32비트 값이 될까요?",
       choices: [
         { id: "signed-extended", label: "0xffffff80" },
@@ -349,15 +458,36 @@ lbu x6, 0(x10)`,
         "lb는 비트 7을 부호 비트로 보고 위쪽 24비트를 1로 채워 0xffffff80을 만듭니다.",
     },
     transfer: {
-      prompt: "같은 바이트를 lbu로 읽은 x6의 값은 무엇일까요?",
+      scenario: {
+        source: `lb x7, 3(x10)
+lbu x8, 3(x10)`,
+        setup: [
+          "x10 = 0x00001000",
+          "0x00001003의 바이트 = 0xfe",
+        ],
+        options: {
+          initialMemory: [{ address: DATA_BASE + 3, bytes: [0xfe] }],
+        },
+      },
+      prompt: "새 코드의 lb와 lbu 뒤에 x7과 x8은 무엇일까요?",
       choices: [
-        { id: "unsigned-byte", label: "0x00000080" },
-        { id: "unsigned-signed", label: "0xffffff80" },
-        { id: "unsigned-zero", label: "0x00000000" },
+        {
+          id: "new-signed-pair",
+          label: "x7 = 0xfffffffe, x8 = 0x000000fe",
+        },
+        {
+          id: "new-both-unsigned",
+          label: "x7 = x8 = 0x000000fe",
+        },
+        {
+          id: "new-both-signed",
+          label: "x7 = x8 = 0xfffffffe",
+        },
       ],
-      correctChoiceId: "unsigned-byte",
+      correctChoiceId: "new-signed-pair",
+      wrongHint: "같은 8비트를 읽더라도 lb와 lbu가 위쪽 24비트를 어떻게 채우는지 각각 확인하세요.",
       explanation:
-        "lbu는 위쪽 비트를 0으로 채웁니다. 메모리의 0x80은 그대로이고 해석만 달라집니다.",
+        "lb는 0xfe의 부호 비트를 확장해 x7에 0xfffffffe를 쓰고, lbu는 0으로 확장해 x8에 0x000000fe를 씁니다.",
     },
   },
   {
@@ -386,36 +516,66 @@ done:`,
       unit: 1,
     },
     checkpoint: {
-      sourceLine: 2,
-      prompt: "첫 반복의 sb가 만드는 첫 메모리 변화는 무엇일까요?",
+      sourceLine: 1,
+      stepIndex: 0,
+      prompt: "첫 beq의 분기 결과와 다음 PC는 무엇일까요?",
       choices: [
-        { id: "loop-first", label: "0x00001000에 0x5a를 씀" },
-        { id: "loop-end", label: "0x00001004에 0x5a를 씀" },
-        { id: "loop-word", label: "0x00001000부터 4바이트를 한 번에 씀" },
+        {
+          id: "loop-not-taken",
+          label: "분기하지 않고 다음 PC = 0x00000004",
+        },
+        {
+          id: "loop-taken",
+          label: "분기하여 다음 PC = 0x00000010",
+        },
+        {
+          id: "loop-wrong-next",
+          label: "분기하지 않고 다음 PC = 0x00000008",
+        },
       ],
-      correctChoiceId: "loop-first",
+      correctChoiceId: "loop-not-taken",
       explanation:
-        "첫 비교에서는 x5와 x6이 다릅니다. 분기를 통과한 sb는 현재 x5 주소 0x1000에 한 바이트를 씁니다.",
+        "첫 비교의 x5는 0x00001000이고 x6은 0x00001004라서 같지 않습니다. beq는 분기하지 않고 다음 명령어 주소 0x00000004로 이동합니다.",
     },
     transfer: {
-      prompt: "프로그램이 끝났을 때 채워진 주소와 x5의 값은 무엇일까요?",
+      scenario: {
+        source: `loop2: beq x8, x9, done2
+sb x7, 0(x8)
+addi x8, x8, 1
+beq x0, x0, loop2
+done2:`,
+        setup: [
+          "x7 = 0x000000c7",
+          "x8 = 0x00001002",
+          "x9 = 0x00001005",
+        ],
+        options: {
+          initialRegisters: {
+            7: 0xc7,
+            8: DATA_BASE + 2,
+            9: DATA_BASE + 5,
+          },
+        },
+      },
+      prompt: "새 반복 프로그램이 끝나면 채워진 주소와 x8은 무엇일까요?",
       choices: [
         {
-          id: "loop-complete",
-          label: "0x1000부터 0x1003까지 채워지고 x5 = 0x1004",
+          id: "new-loop-complete",
+          label: "0x1002부터 0x1004까지 채워지고 x8 = 0x1005",
         },
         {
-          id: "loop-extra",
-          label: "0x1000부터 0x1004까지 채워지고 x5 = 0x1005",
+          id: "new-loop-extra",
+          label: "0x1002부터 0x1005까지 채워지고 x8 = 0x1006",
         },
         {
-          id: "loop-once",
-          label: "0x1000만 채워지고 x5 = 0x1001",
+          id: "new-loop-once",
+          label: "0x1002만 채워지고 x8 = 0x1003",
         },
       ],
-      correctChoiceId: "loop-complete",
+      correctChoiceId: "new-loop-complete",
+      wrongHint: "포인터가 끝 주소와 같아지는 순간에는 store보다 beq가 먼저 실행된다는 점을 확인하세요.",
       explanation:
-        "x5가 0x1004가 되면 첫 beq가 done으로 이동합니다. 끝 주소 자체에는 쓰지 않습니다.",
+        "x8은 0x1002, 0x1003, 0x1004에 0xc7을 쓴 뒤 0x1005가 됩니다. 그때 beq가 done2로 이동하므로 끝 주소 0x1005에는 쓰지 않습니다.",
     },
   },
 ];

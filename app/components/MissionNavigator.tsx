@@ -104,9 +104,13 @@ export function MissionNavigator({
           const statusLabel =
             status === "independent"
               ? "혼자 해결"
-              : status === "guided"
-                ? "연습 완료"
-                : evidence.predictionAttempts > 0
+              : evidence.transferCompleted
+                ? "복습 후 해결"
+                : status === "guided"
+                  ? "연습 완료"
+                  : evidence.predictionAttempts > 0 ||
+                      evidence.predictionSkipped ||
+                      evidence.lastAttemptAt !== null
                   ? "학습 중"
                   : "시작 전";
           return (

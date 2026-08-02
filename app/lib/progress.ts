@@ -4,7 +4,7 @@ import {
 } from "../content/memoryMissionIds";
 
 export const PROGRESS_KEY = "asm-lab-progress";
-export const PROGRESS_VERSION = 2 as const;
+export const PROGRESS_VERSION = 3 as const;
 
 export const MISSION_IDS = MEMORY_MISSION_IDS;
 export type MissionId = MemoryMissionId;
@@ -13,6 +13,10 @@ export type MissionStatus = "not-started" | "guided" | "independent";
 export type MissionProgress = {
   status: MissionStatus;
   predictionAttempts: number;
+  predictionCorrect: boolean;
+  predictionSkipped: boolean;
+  transferAttempts: number;
+  transferCompleted: boolean;
   transferPassed: boolean;
   lastAttemptAt: string | null;
 };
@@ -30,6 +34,11 @@ export type MissionProgressUpdate = {
    */
   predictionAttempts?: number;
   predictionAttempt?: boolean;
+  predictionCorrect?: boolean;
+  predictionSkipped?: boolean;
+  transferAttempts?: number;
+  transferAttempt?: boolean;
+  transferCompleted?: boolean;
   status?: MissionStatus;
   transferPassed?: boolean;
   lastAttemptAt?: string | null;
@@ -58,6 +67,10 @@ function emptyMissionProgress(): MissionProgress {
   return {
     status: "not-started",
     predictionAttempts: 0,
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: 0,
+    transferCompleted: false,
     transferPassed: false,
     lastAttemptAt: null,
   };
@@ -128,7 +141,7 @@ function higherStatus(
   return STATUS_RANK[candidate] > STATUS_RANK[current] ? candidate : current;
 }
 
-function normalizeMissionProgress(value: unknown): MissionProgress {
+function normalizeV3MissionProgress(value: unknown): MissionProgress {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return emptyMissionProgress();
   }
@@ -137,23 +150,40 @@ function normalizeMissionProgress(value: unknown): MissionProgress {
   const predictionAttempts = normalizeAttemptCount(
     candidate.predictionAttempts,
   );
-  const transferPassed = candidate.transferPassed === true;
+  const predictionCorrect = candidate.predictionCorrect === true;
+  const predictionSkipped = candidate.predictionSkipped === true;
+  let transferAttempts = normalizeAttemptCount(candidate.transferAttempts);
+  let transferCompleted = candidate.transferCompleted === true;
+  const claimedTransferPass = candidate.transferPassed === true;
+  const transferPassed = claimedTransferPass && transferAttempts <= 1;
   const lastAttemptAt = normalizeTimestamp(candidate.lastAttemptAt);
   let status = isMissionStatus(candidate.status)
     ? candidate.status
     : "not-started";
 
-  if (transferPassed) status = "independent";
+  if (transferPassed) {
+    transferAttempts = Math.max(1, transferAttempts);
+    transferCompleted = true;
+    status = "independent";
+  } else {
+    if (claimedTransferPass) transferCompleted = true;
+    if (status === "independent") status = "guided";
+    if (transferCompleted) status = higherStatus(status, "guided");
+  }
 
   return {
     status,
     predictionAttempts,
+    predictionCorrect,
+    predictionSkipped,
+    transferAttempts,
+    transferCompleted,
     transferPassed,
     lastAttemptAt,
   };
 }
 
-function normalizeV2(value: unknown): ProgressData {
+function normalizeV3(value: unknown): ProgressData {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return emptyProgress();
   }
@@ -171,7 +201,66 @@ function normalizeV2(value: unknown): ProgressData {
   const missions = createEmptyMissions();
 
   for (const missionId of MISSION_IDS) {
-    missions[missionId] = normalizeMissionProgress(rawMissions[missionId]);
+    missions[missionId] = normalizeV3MissionProgress(rawMissions[missionId]);
+  }
+
+  return {
+    version: PROGRESS_VERSION,
+    missions,
+    lastMissionId: isMissionId(candidate.lastMissionId)
+      ? candidate.lastMissionId
+      : null,
+  };
+}
+
+function migrateV2MissionProgress(value: unknown): MissionProgress {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return emptyMissionProgress();
+  }
+
+  const candidate = value as {
+    status?: unknown;
+    predictionAttempts?: unknown;
+    transferPassed?: unknown;
+    lastAttemptAt?: unknown;
+  };
+  const legacyStatus = isMissionStatus(candidate.status)
+    ? candidate.status
+    : "not-started";
+  const hadLegacyIndependentEvidence =
+    legacyStatus === "independent" || candidate.transferPassed === true;
+
+  return {
+    status: hadLegacyIndependentEvidence ? "guided" : legacyStatus,
+    predictionAttempts: normalizeAttemptCount(candidate.predictionAttempts),
+    predictionCorrect: false,
+    predictionSkipped: false,
+    transferAttempts: hadLegacyIndependentEvidence ? 1 : 0,
+    transferCompleted: hadLegacyIndependentEvidence,
+    transferPassed: false,
+    lastAttemptAt: normalizeTimestamp(candidate.lastAttemptAt),
+  };
+}
+
+function migrateV2(value: unknown): ProgressData {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return emptyProgress();
+  }
+
+  const candidate = value as {
+    missions?: unknown;
+    lastMissionId?: unknown;
+  };
+  const rawMissions =
+    candidate.missions &&
+    typeof candidate.missions === "object" &&
+    !Array.isArray(candidate.missions)
+      ? (candidate.missions as Record<string, unknown>)
+      : {};
+  const missions = createEmptyMissions();
+
+  for (const missionId of MISSION_IDS) {
+    missions[missionId] = migrateV2MissionProgress(rawMissions[missionId]);
   }
 
   return {
@@ -206,8 +295,8 @@ function migrateV1(value: unknown): ProgressData {
 }
 
 /**
- * Reads either the current schema or the legacy v1 schema. The returned value
- * is always a complete, canonical v2 snapshot and never exposes parsed input
+ * Reads the current schema or a legacy schema. The returned value is always a
+ * complete, canonical v3 snapshot and never exposes parsed input
  * objects by reference.
  */
 export function readProgress(storage: StorageAdapter): ProgressData {
@@ -225,40 +314,65 @@ export function readProgress(storage: StorageAdapter): ProgressData {
   }
 
   const version = (parsed as { version?: unknown }).version;
-  if (version === PROGRESS_VERSION) return normalizeV2(parsed);
+  if (version === PROGRESS_VERSION) return normalizeV3(parsed);
+  if (version === 2) return migrateV2(parsed);
   if (version === 1) return migrateV1(parsed);
   return emptyProgress();
 }
 
 /**
  * Purely merges new evidence into one mission. Evidence is monotonic: status,
- * attempt count, transfer success, and attempt time cannot move backwards.
+ * attempt counts, outcomes, and attempt time cannot move backwards.
  */
 export function markMissionProgress(
   progress: ProgressData,
   missionId: MissionId,
   update: MissionProgressUpdate = {},
 ): ProgressData {
-  const current = normalizeV2(progress);
+  const current = normalizeV3(progress);
   if (!isMissionId(missionId)) return current;
   const previous = current.missions[missionId];
   const requestedAttempts = normalizeAttemptCount(update.predictionAttempts);
   const predictionAttempts = update.predictionAttempt
     ? Math.min(previous.predictionAttempts + 1, Number.MAX_SAFE_INTEGER)
     : Math.max(previous.predictionAttempts, requestedAttempts);
+  const predictionCorrect =
+    previous.predictionCorrect || update.predictionCorrect === true;
+  const predictionSkipped =
+    previous.predictionSkipped || update.predictionSkipped === true;
+  const requestedTransferAttempts = normalizeAttemptCount(
+    update.transferAttempts,
+  );
+  let transferAttempts = update.transferAttempt
+    ? Math.min(previous.transferAttempts + 1, Number.MAX_SAFE_INTEGER)
+    : Math.max(previous.transferAttempts, requestedTransferAttempts);
+  const firstAttemptSuccess =
+    update.transferPassed === true &&
+    previous.transferAttempts === 0 &&
+    transferAttempts <= 1;
+  const transferPassed = previous.transferPassed || firstAttemptSuccess;
+  let transferCompleted =
+    previous.transferCompleted ||
+    update.transferCompleted === true ||
+    update.transferPassed === true;
+  if (firstAttemptSuccess && transferAttempts === 0) transferAttempts = 1;
   const candidateTimestamp = normalizeTimestamp(update.lastAttemptAt);
   const lastAttemptAt = laterTimestamp(
     previous.lastAttemptAt,
     candidateTimestamp,
   );
-  const transferPassed =
-    previous.transferPassed || update.transferPassed === true;
   let status = higherStatus(
     previous.status,
     isMissionStatus(update.status) ? update.status : previous.status,
   );
 
-  if (transferPassed) status = "independent";
+  if (transferPassed) {
+    transferCompleted = true;
+    status = "independent";
+  } else {
+    if (status === "independent") status = "guided";
+    if (transferCompleted) status = higherStatus(status, "guided");
+  }
 
   return {
     version: PROGRESS_VERSION,
@@ -267,6 +381,10 @@ export function markMissionProgress(
       [missionId]: {
         status,
         predictionAttempts,
+        predictionCorrect,
+        predictionSkipped,
+        transferAttempts,
+        transferCompleted,
         transferPassed,
         lastAttemptAt,
       },
@@ -280,7 +398,7 @@ export function setLastMission(
   progress: ProgressData,
   missionId: MissionId | null,
 ): ProgressData {
-  const current = normalizeV2(progress);
+  const current = normalizeV3(progress);
   return {
     ...current,
     lastMissionId: isMissionId(missionId) ? missionId : null,
@@ -291,14 +409,14 @@ export function serializeProgress(
   progress: ProgressData,
   pretty = false,
 ): string {
-  return JSON.stringify(normalizeV2(progress), null, pretty ? 2 : undefined);
+  return JSON.stringify(normalizeV3(progress), null, pretty ? 2 : undefined);
 }
 
 export function writeProgress(
   storage: StorageAdapter,
   progress: ProgressData,
 ): ProgressData {
-  const stable = normalizeV2(progress);
+  const stable = normalizeV3(progress);
   storage.setItem(PROGRESS_KEY, serializeProgress(stable));
   return stable;
 }

@@ -1,4 +1,5 @@
 import type { SerializedInstruction } from "../../lib/rv32i/types";
+import { formatHex } from "../../lib/rv32i/memory";
 
 export type PredictionChoice = {
   id: string;
@@ -14,6 +15,7 @@ export type PredictionCheckpoint = {
 
 type PredictionGateProps = {
   instruction: SerializedInstruction | null;
+  registers: readonly number[];
   checkpoint?: PredictionCheckpoint | null;
   selected: string;
   skipped: boolean;
@@ -22,47 +24,76 @@ type PredictionGateProps = {
   onSkip: () => void;
 };
 
-const OPTIONS: readonly PredictionChoice[] = [
+const STATE_CHANGE_CHOICES: readonly PredictionChoice[] = [
   { id: "register", label: "목적지 레지스터에 결과를 씁니다." },
   { id: "memory", label: "계산한 메모리 주소에 값을 씁니다." },
-  { id: "pc", label: "조건 비교 결과로 다음 PC가 정해집니다." },
   {
     id: "none",
-    label: "레지스터와 메모리는 그대로이고 PC만 다음 명령어로 이동합니다.",
+    label: "쓰기 결과는 남지 않고 PC만 다음 명령어로 이동합니다.",
   },
 ] as const;
 
 export function expectedPrediction(
   instruction: SerializedInstruction | null,
-  checkpoint?: PredictionCheckpoint | null,
+  checkpoint: PredictionCheckpoint | null,
+  registers: readonly number[],
 ): string {
   if (checkpoint) return checkpoint.correctChoiceId;
   if (!instruction) return "none";
-  if (
-    instruction.mnemonic === "sb" ||
-    instruction.mnemonic === "sh" ||
-    instruction.mnemonic === "sw"
-  ) {
-    return "memory";
+  if (instruction.prediction.effect === "branch") {
+    const left = registers[instruction.prediction.leftRegister] ?? 0;
+    const right = registers[instruction.prediction.rightRegister] ?? 0;
+    return left === right ? "branch-taken" : "branch-not-taken";
   }
-  if (instruction.mnemonic === "beq") return "pc";
-  return "register";
+  if (instruction.prediction.effect === "memory") return "memory";
+  return instruction.prediction.destinationRegister === 0
+    ? "none"
+    : "register";
 }
 
 export function predictionLabel(
   prediction: string,
-  checkpoint?: PredictionCheckpoint | null,
+  checkpoint: PredictionCheckpoint | null,
+  instruction: SerializedInstruction | null,
+  registers: readonly number[],
 ): string {
   if (!prediction) return "예측하지 않음";
   return (
-    (checkpoint?.choices ?? OPTIONS).find(
+    predictionChoices(instruction, checkpoint, registers).find(
       (choice) => choice.id === prediction,
     )?.label ?? prediction
   );
 }
 
+export function predictionChoices(
+  instruction: SerializedInstruction | null,
+  checkpoint: PredictionCheckpoint | null,
+  registers: readonly number[],
+): readonly PredictionChoice[] {
+  if (checkpoint) return checkpoint.choices;
+  if (!instruction || instruction.prediction.effect !== "branch") {
+    return STATE_CHANGE_CHOICES;
+  }
+
+  const metadata = instruction.prediction;
+  const left = registers[metadata.leftRegister] ?? 0;
+  const right = registers[metadata.rightRegister] ?? 0;
+  const nextAddress = (instruction.address + 4) >>> 0;
+  return [
+    {
+      id: "branch-taken",
+      label: `x${metadata.leftRegister} ${formatHex(left)}와 x${metadata.rightRegister} ${formatHex(right)}가 같아서 ${formatHex(metadata.target)}로 분기합니다.`,
+    },
+    {
+      id: "branch-not-taken",
+      label: `x${metadata.leftRegister} ${formatHex(left)}와 x${metadata.rightRegister} ${formatHex(right)}가 달라서 ${formatHex(nextAddress)}로 이동합니다.`,
+    },
+  ];
+}
+
 export function PredictionGate({
   instruction,
+  registers,
   checkpoint = null,
   selected,
   skipped,
@@ -70,7 +101,9 @@ export function PredictionGate({
   onSelect,
   onSkip,
 }: PredictionGateProps) {
-  const choices = checkpoint?.choices ?? OPTIONS;
+  const choices = predictionChoices(instruction, checkpoint, registers);
+  const isBranch =
+    !checkpoint && instruction?.prediction.effect === "branch";
 
   return (
     <fieldset
@@ -80,12 +113,16 @@ export function PredictionGate({
     >
       <legend>
         {checkpoint?.prompt ??
-          "다음 Step에서 가장 중요한 변화는 무엇일까요?"}
+          (isBranch
+            ? "분기 조건이 성립할까요? 다음 PC도 함께 예측하세요."
+            : "다음 Step에서 가장 중요한 변화는 무엇일까요?")}
       </legend>
       <p className="field-help" id="prediction-help">
         {checkpoint
-          ? "정확한 주소와 값을 먼저 고른 뒤 실제 실행 결과와 비교합니다."
-          : "답을 고르거나 잘 모르겠다고 표시하면 실행 결과를 확인할 수 있습니다."}
+          ? "답을 하나 고른 뒤 실제 상태 변화와 비교합니다."
+          : isBranch
+            ? "현재 레지스터 값과 분기 목적지를 함께 확인하세요."
+            : "답을 고르거나 잘 모르겠다고 표시하면 실행 결과를 확인할 수 있습니다."}
       </p>
       <div className="prediction-options">
         {choices.map((option) => (

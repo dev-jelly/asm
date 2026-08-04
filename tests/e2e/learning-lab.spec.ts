@@ -894,6 +894,7 @@ test("1440px의 좁은 메모리 패널에서도 보기 제어가 겹치지 않�
     await unitGroup
       .getByRole("radio", { name: "1B · byte", exact: true })
       .click();
+    await visualizer.locator(".memory-toolbar").scrollIntoViewIfNeeded();
     const geometry = await visualizer.evaluate((root) => {
       const toolbar = root.querySelector<HTMLElement>(".memory-toolbar");
       if (!toolbar) throw new Error("memory toolbar not found");

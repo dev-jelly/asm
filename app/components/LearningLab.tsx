@@ -101,6 +101,10 @@ export function LearningLab() {
       : submittedPrediction;
   const showingReviewedPrediction =
     visibleStatus === "completed" && comparisonPrediction !== null;
+  const showingCheckpointReview =
+    visibleStatus === "completed" &&
+    checkpointPrediction !== null &&
+    comparisonPrediction === checkpointPrediction;
   const displayedCheckpoint = showingReviewedPrediction
     ? comparisonPrediction.checkpoint
     : activeCheckpoint;
@@ -369,11 +373,22 @@ export function LearningLab() {
   const newPredictionAnnouncement =
     submittedPrediction && announcementDelta
       ? submittedPrediction.skipped
-        ? "예측 없이 실제 결과를 확인했습니다."
+        ? `Step ${announcementDelta.stepIndexAfter}: 예측 없이 실제 결과를 확인했습니다.`
         : latestPredictionCorrect
-          ? "예측이 실제 결과와 일치했습니다."
-          : "예측과 실제 결과가 다릅니다."
+          ? `Step ${announcementDelta.stepIndexAfter}: 예측이 실제 결과와 일치했습니다.`
+          : `Step ${announcementDelta.stepIndexAfter}: 예측과 실제 결과가 다릅니다.`
       : "";
+  const latestPredictionResult =
+    showingCheckpointReview &&
+    submittedPrediction &&
+    submittedPrediction !== checkpointPrediction &&
+    announcementDelta
+      ? submittedPrediction.skipped
+        ? `방금 실행한 Step ${announcementDelta.stepIndexAfter}: 예측 없이 실행했습니다.`
+        : latestPredictionCorrect
+          ? `방금 실행한 Step ${announcementDelta.stepIndexAfter}: 예측이 실제 결과와 일치했습니다.`
+          : `방금 실행한 Step ${announcementDelta.stepIndexAfter}: 예측과 실제 결과가 다릅니다.`
+      : undefined;
   if (visibleStatus === "error") {
     latestPredictionAnnouncementRef.current = "";
   } else if (newPredictionAnnouncement) {
@@ -601,7 +616,7 @@ export function LearningLab() {
         </strong>
       </header>
 
-      <div className="lab-workspace">
+      <div className="lab-workspace" id="playground">
         <div className="lab-source-and-prediction">
           <section className="source-panel" aria-labelledby="source-title">
             <div className="section-heading-row">
@@ -731,6 +746,8 @@ export function LearningLab() {
                 correct={comparisonCorrect}
                 skipped={comparisonPrediction.skipped}
                 explanation={comparisonPrediction.checkpoint?.explanation}
+                isCheckpointReview={showingCheckpointReview}
+                latestResult={latestPredictionResult}
               />
             ) : null}
           </div>

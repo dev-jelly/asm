@@ -42,8 +42,9 @@ export function LabControls({
           type="button"
           onClick={onBack}
           disabled={busy || running || !canBack}
+          aria-keyshortcuts="Alt+B"
         >
-          Back
+          한 단계 되돌리기
         </button>
         <button
           type="button"
@@ -51,8 +52,9 @@ export function LabControls({
           onClick={onStep}
           disabled={busy || running || completed || error || !canReveal}
           aria-describedby="step-requirement"
+          aria-keyshortcuts="Alt+S"
         >
-          Step
+          한 단계 실행
         </button>
         <label className="run-confirmation">
           <input
@@ -61,7 +63,10 @@ export function LabControls({
             onChange={(event) => onRunConfirmed(event.target.checked)}
             disabled={busy || running || completed}
           />
-          <span>Run은 현재 예측 이후 단계의 확인 과정을 건너뜁니다.</span>
+          <span>
+            연속 실행은 현재 예측을 실행한 뒤 이후 단계를 예측 없이 계속
+            실행합니다.
+          </span>
         </label>
         <button
           type="button"
@@ -76,27 +81,30 @@ export function LabControls({
             !runConfirmed
           }
           aria-describedby={runLockedReason ? "run-requirement" : undefined}
+          aria-keyshortcuts="Alt+R"
         >
-          Run
+          연속 실행
         </button>
         <button
           type="button"
           onClick={onPause}
           disabled={!running}
+          aria-keyshortcuts="Alt+P"
         >
-          Pause
+          일시정지
         </button>
         <button
           type="button"
           onClick={onReset}
           disabled={busy || running || error}
+          aria-keyshortcuts="Alt+0"
         >
-          Reset
+          처음부터
         </button>
       </div>
       <p className="control-note" id="step-requirement">
-        Step과 Run은 답을 고르거나 잘 모르겠다고 표시한 뒤 사용할 수 있습니다.
-        단축키는 Alt+S, Alt+B, Alt+R, Alt+P, Alt+0입니다.
+        한 단계 실행과 연속 실행은 답을 고르거나 예측을 건너뛴 뒤 사용할 수
+        있습니다. 단축키는 Alt+S, Alt+B, Alt+R, Alt+P, Alt+0입니다.
       </p>
       {runLockedReason ? (
         <p className="control-note" id="run-requirement">

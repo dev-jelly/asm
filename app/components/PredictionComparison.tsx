@@ -1,5 +1,6 @@
 import { formatHex } from "../../lib/rv32i/memory";
 import type { StepDelta } from "../../lib/rv32i/types";
+import { formatMemoryBytes } from "../lib/formatMemoryBytes";
 
 type PredictionComparisonProps = {
   delta: StepDelta;
@@ -7,6 +8,8 @@ type PredictionComparisonProps = {
   correct: boolean | null;
   skipped: boolean;
   explanation?: string;
+  isCheckpointReview?: boolean;
+  latestResult?: string;
 };
 
 export function PredictionComparison({
@@ -15,6 +18,8 @@ export function PredictionComparison({
   correct,
   skipped,
   explanation,
+  isCheckpointReview = false,
+  latestResult,
 }: PredictionComparisonProps) {
   return (
     <section
@@ -24,16 +29,45 @@ export function PredictionComparison({
       }
       aria-labelledby="prediction-comparison-title"
     >
+      {latestResult ? (
+        <p className="latest-prediction-result">{latestResult}</p>
+      ) : null}
       <div className="prediction-comparison-heading">
-        <h3 id="prediction-comparison-title">예측과 실제 변화</h3>
+        <h3 id="prediction-comparison-title">
+          {isCheckpointReview
+            ? "미션 핵심 예측과 실제 변화"
+            : "예측과 실제 변화"}
+        </h3>
         <strong>
-          {skipped
-            ? "실제 결과 확인"
-            : correct
-              ? "예측 일치"
-              : "다른 결과 발견"}
+          {isCheckpointReview
+            ? skipped
+              ? "핵심 예측 없이 확인"
+              : correct
+                ? "핵심 예측 일치"
+                : "핵심 예측과 다름"
+            : skipped
+              ? "실제 결과 확인"
+              : correct
+                ? "예측 일치"
+                : "다른 결과 발견"}
         </strong>
       </div>
+      {isCheckpointReview ? (
+        <p className="prediction-review-context">
+          {latestResult ? (
+            <>
+              Step {delta.stepIndexAfter}, 코드 {delta.instruction.sourceLine}행의
+              결과를 보존해 표시합니다. 방금 실행한 Step의 안내와는
+              별도입니다.
+            </>
+          ) : (
+            <>
+              Step {delta.stepIndexAfter}, 코드 {delta.instruction.sourceLine}행은
+              이 미션의 핵심 예측 결과입니다.
+            </>
+          )}
+        </p>
+      ) : null}
       <dl>
         <div>
           <dt>예측</dt>
@@ -49,7 +83,7 @@ export function PredictionComparison({
   );
 }
 
-function describeDelta(delta: StepDelta): string {
+export function describeDelta(delta: StepDelta): string {
   const memoryWrite = delta.memoryPatches.at(-1);
   if (memoryWrite) {
     const endAddress = memoryWrite.address + memoryWrite.after.length - 1;
@@ -57,7 +91,7 @@ function describeDelta(delta: StepDelta): string {
       memoryWrite.after.length === 1
         ? formatHex(memoryWrite.address)
         : `${formatHex(memoryWrite.address)}부터 ${formatHex(endAddress)}`;
-    return `${range}의 바이트가 ${formatBytes(memoryWrite.before)}에서 ${formatBytes(memoryWrite.after)}로 바뀌었습니다.`;
+    return `${range}의 바이트가 ${formatMemoryBytes(memoryWrite.before, memoryWrite.initializedBefore)}에서 ${formatMemoryBytes(memoryWrite.after, memoryWrite.initializedAfter)}로 바뀌었습니다.`;
   }
 
   const memoryRead = delta.memoryAccesses
@@ -67,7 +101,7 @@ function describeDelta(delta: StepDelta): string {
     .filter((write) => write.committed)
     .at(-1);
   if (memoryRead && registerWrite) {
-    return `${formatHex(memoryRead.address)}에서 ${memoryRead.size}바이트 ${formatBytes(memoryRead.bytes)}를 읽어 x${registerWrite.register}에 ${formatHex(registerWrite.after)}를 썼습니다. 메모리는 바뀌지 않았습니다.`;
+    return `${formatHex(memoryRead.address)}에서 ${memoryRead.size}바이트를 읽었습니다. 읽은 바이트: ${formatMemoryBytes(memoryRead.bytes)}. 레지스터 x${registerWrite.register}에 기록된 값: ${formatHex(registerWrite.after)}. 메모리는 바뀌지 않았습니다.`;
   }
 
   const ignoredWrite = delta.registerWrites.find(
@@ -78,7 +112,7 @@ function describeDelta(delta: StepDelta): string {
   }
 
   if (registerWrite) {
-    return `x${registerWrite.register}가 ${formatHex(registerWrite.before)}에서 ${formatHex(registerWrite.after)}로 바뀌고 PC는 ${formatHex(delta.pcAfter)}로 이동했습니다.`;
+    return `레지스터 x${registerWrite.register} 값이 ${formatHex(registerWrite.before)}에서 ${formatHex(registerWrite.after)}로 바뀌고 PC는 ${formatHex(delta.pcAfter)}로 이동했습니다.`;
   }
 
   if (delta.controlFlow.kind === "branch") {
@@ -86,8 +120,4 @@ function describeDelta(delta: StepDelta): string {
   }
 
   return `레지스터와 메모리는 바뀌지 않았고 PC는 ${formatHex(delta.pcAfter)}로 이동했습니다.`;
-}
-
-function formatBytes(bytes: readonly number[]): string {
-  return bytes.map((byte) => byte.toString(16).padStart(2, "0")).join(" ");
 }

@@ -44,7 +44,7 @@ export default function Home() {
 
       <main id="main-content">
         <div id="top" className="top-anchor">
-          <div id="playground" className="anchor-section lab-anchor">
+          <div className="anchor-section lab-anchor">
             <LearningLab />
           </div>
         </div>

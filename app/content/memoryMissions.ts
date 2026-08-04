@@ -121,7 +121,7 @@ addi x9, x8, 3`,
     id: "x-zero-wrap",
     moduleId: "x",
     marker: "x",
-    title: "x0는 고정되고 계산은 32비트로 감깁니다",
+    title: "x0은 고정되고 계산은 32비트로 감깁니다",
     summary: "x0 쓰기는 무시되고 0xffffffff에 1을 더하면 0으로 돌아옵니다.",
     objective: "고정 레지스터와 32비트 unsigned wrap을 실행 결과로 확인합니다.",
     source: `addi x0, x0, 1
@@ -146,7 +146,7 @@ addi x5, x5, 1`,
       ],
       correctChoiceId: "zero-stays",
       explanation:
-        "x0에 대한 쓰기는 커밋되지 않습니다. x0는 언제나 0을 읽습니다.",
+        "x0에 대한 쓰기는 커밋되지 않습니다. x0은 언제나 0을 읽습니다.",
     },
     transfer: {
       scenario: {
@@ -393,7 +393,7 @@ lw x6, 0(x10)`,
       ],
       correctChoiceId: "partial-correct",
       explanation:
-        "sh는 x5의 낮은 16비트 0xccdd만 씁니다. offset 2이므로 주소 0x1002와 0x1003에 dd cc가 놓입니다.",
+        "sh는 x5의 낮은 16비트 0xccdd만 씁니다. offset이 2이므로 주소 0x1002와 0x1003에 dd cc가 놓입니다.",
     },
     transfer: {
       scenario: {
@@ -447,7 +447,8 @@ lbu x6, 0(x10)`,
     checkpoint: {
       sourceLine: 1,
       stepIndex: 0,
-      prompt: "lb가 바이트 0x80을 x5에 읽으면 어떤 32비트 값이 될까요?",
+      prompt:
+        "메모리의 0x80을 lb로 읽어 x5에 적재하면 어떤 32비트 값이 될까요?",
       choices: [
         { id: "signed-extended", label: "0xffffff80" },
         { id: "zero-extended", label: "0x00000080" },

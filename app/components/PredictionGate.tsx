@@ -82,11 +82,11 @@ export function predictionChoices(
   return [
     {
       id: "branch-taken",
-      label: `x${metadata.leftRegister} ${formatHex(left)}와 x${metadata.rightRegister} ${formatHex(right)}가 같아서 ${formatHex(metadata.target)}로 분기합니다.`,
+      label: `비교 값: x${metadata.leftRegister} = ${formatHex(left)}, x${metadata.rightRegister} = ${formatHex(right)}. 두 값이 같으므로 다음 PC = ${formatHex(metadata.target)} (분기).`,
     },
     {
       id: "branch-not-taken",
-      label: `x${metadata.leftRegister} ${formatHex(left)}와 x${metadata.rightRegister} ${formatHex(right)}가 달라서 ${formatHex(nextAddress)}로 이동합니다.`,
+      label: `비교 값: x${metadata.leftRegister} = ${formatHex(left)}, x${metadata.rightRegister} = ${formatHex(right)}. 두 값이 다르므로 다음 PC = ${formatHex(nextAddress)} (순차 실행).`,
     },
   ];
 }
@@ -119,10 +119,10 @@ export function PredictionGate({
       </legend>
       <p className="field-help" id="prediction-help">
         {checkpoint
-          ? "답을 하나 고른 뒤 실제 상태 변화와 비교합니다."
+          ? "답을 고르거나 예측을 건너뛴 뒤 한 단계 실행 버튼으로 실제 상태 변화와 비교합니다."
           : isBranch
-            ? "현재 레지스터 값과 분기 목적지를 함께 확인하세요."
-            : "답을 고르거나 잘 모르겠다고 표시하면 실행 결과를 확인할 수 있습니다."}
+            ? "현재 레지스터 값과 분기 목적지를 확인하세요. 답을 고르거나 예측을 건너뛴 뒤 한 단계 실행합니다."
+            : "답을 고르거나 예측을 건너뛴 뒤 한 단계 실행 버튼으로 실제 결과를 확인합니다."}
       </p>
       <div className="prediction-options">
         {choices.map((option) => (
@@ -143,12 +143,14 @@ export function PredictionGate({
         className="text-button"
         onClick={onSkip}
         disabled={disabled || !instruction}
+        aria-pressed={skipped}
       >
-        잘 모르겠어요. 결과 보기
+        잘 모르겠어요. 예측 건너뛰기
       </button>
       {skipped ? (
         <p className="skip-note">
-          예측 없이 진행합니다. 다른 답을 고르면 예측으로 바뀝니다.
+          예측을 건너뛰었습니다. 한 단계 실행 버튼을 누르면 실제 결과를
+          확인합니다. 답을 고르면 다시 예측으로 기록됩니다.
         </p>
       ) : null}
     </fieldset>

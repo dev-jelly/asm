@@ -38,12 +38,12 @@ test("server-renders the Korean product home and real learning interaction", asy
   assert.match(html, /분기와 반복/);
   assert.match(html, /코드 직접 편집/);
   assert.match(html, /다음 Step에서 가장 중요한 변화/);
-  assert.match(html, /잘 모르겠어요\. 결과 보기/);
+  assert.match(html, /잘 모르겠어요\. 예측 건너뛰기/);
   assert.match(html, /새 상황에서 한 번 더 확인합니다/);
   assert.match(html, /새 문제 RV32I 코드/);
   assert.match(html, /핵심 단계의 결과를 확인하고 프로그램을 완료/);
   assert.match(html, /로그인 없이 시작/);
-  assert.match(html, /<button[^>]*disabled[^>]*>Step<\/button>/i);
+  assert.match(html, /<button[^>]*disabled[^>]*>한 단계 실행<\/button>/i);
   assert.match(html, /명령어를 실행할 초기 상태를 준비/);
   assert.match(html, /로그인 없이 이 브라우저에 저장합니다/);
   assert.doesNotMatch(
@@ -160,6 +160,10 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   assert.match(memoryVisualizer, /ArrowRight/);
   assert.match(memoryVisualizer, /Home/);
   assert.match(memoryVisualizer, /littleEndianExplanation/);
+  assert.match(memoryVisualizer, /@astryxdesign\/core\/SegmentedControl/);
+  assert.match(memoryVisualizer, /<SegmentedControl/);
+  assert.match(memoryVisualizer, /1B · byte/);
+  assert.doesNotMatch(memoryVisualizer, /name="memory-(?:unit-size|number-format)"/);
   assert.match(timeline, /aria-pressed/);
   assert.match(timeline, /실행 기록/);
 
@@ -220,32 +224,46 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
     controls.indexOf('className="run-confirmation"') <
       controls.indexOf("onClick={onRun}"),
   );
-  for (const visibleName of ["Back", "Pause", "Reset"]) {
+  for (const visibleName of [
+    "한 단계 되돌리기",
+    "한 단계 실행",
+    "연속 실행",
+    "일시정지",
+    "처음부터",
+  ]) {
     assert.match(controls, new RegExp(`>\\s*${visibleName}\\s*<`));
+  }
+  for (const shortcut of ["Alt+B", "Alt+S", "Alt+R", "Alt+P", "Alt+0"]) {
+    assert.ok(controls.includes(`aria-keyshortcuts="${shortcut}"`));
   }
 
   assert.match(predictionGate, /aria-describedby="prediction-help"/);
-  assert.doesNotMatch(predictionGate, /aria-pressed/);
+  assert.match(predictionGate, /aria-pressed=\{skipped\}/);
   assert.match(predictionGate, /return checkpoint\.choices/);
   assert.match(predictionGate, /checkpoint\?\.prompt/);
   assert.match(predictionGate, /branch-taken/);
   assert.match(predictionGate, /branch-not-taken/);
   assert.match(predictionGate, /메모리 주소에 값을 씁니다/);
   assert.match(predictionGate, /PC만 다음 명령어로 이동합니다/);
-  assert.match(predictionGate, /잘 모르겠어요\. 결과 보기/);
+  assert.match(predictionGate, /잘 모르겠어요\. 예측 건너뛰기/);
 
   assert.match(predictionComparison, /예측과 실제 변화/);
+  assert.match(predictionComparison, /미션 핵심 예측과 실제 변화/);
+  assert.match(predictionComparison, /latest-prediction-result/);
+  assert.match(lab, /방금 실행한 Step/);
   assert.match(predictionComparison, /data-result=/);
   assert.match(predictionComparison, /describeDelta/);
   assert.match(missionNavigator, /aria-label="RV32I 학습 모듈"/);
   assert.match(missionNavigator, /aria-label="현재 모듈의 학습 미션"/);
   assert.match(missionNavigator, /aria-current=\{selected \? "step"/);
+  assert.match(missionNavigator, /옆으로 넘겨 더 보기/);
   assert.match(missionTransfer, /id="practice"/);
   assert.match(missionTransfer, /새 문제 RV32I 코드/);
   assert.match(missionTransfer, /mission\.transfer\.wrongHint/);
   assert.match(missionTransfer, /답 확인/);
   assert.match(missionTransfer, /aria-live="polite"/);
   assert.match(missionTransfer, /nextMissionId/);
+  assert.match(missionTransfer, /nextMissionButtonRef\.current\?\.focus/);
   assert.match(progressPanel, /mission\.predictionSkipped/);
   assert.match(progressPanel, /mission\.transferAttempts/);
   assert.match(progressPanel, /마지막\s*미션/);
@@ -274,9 +292,11 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   assert.match(css, /--border-strong:\s*#858178/);
   assert.match(css, /\.mission-navigation/);
   assert.match(css, /\.module-switcher/);
+  assert.match(css, /\.module-scroll-hint/);
   assert.match(css, /\.mission-switcher/);
   assert.match(css, /\.mission-transfer/);
   assert.match(css, /\.site-footer a[\s\S]*min-height:\s*44px/);
+  assert.match(css, /@container memory-(?:toolbar|visualizer)/);
   assert.match(css, /grid-template-areas:[\s\S]*"source state"[\s\S]*"controls state"/);
   assert.match(
     css,
@@ -292,6 +312,8 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
     ),
     1,
   );
+  assert.match(lab, /className="lab-workspace" id="playground"/);
+  assert.doesNotMatch(page, /id="playground"/);
   assert.doesNotMatch(page, /className="hero"|className="eyebrow"/);
   assert.equal(page.match(/<LearningLab/g)?.length, 1);
   assert.doesNotMatch(page, /AddressValueLesson/);

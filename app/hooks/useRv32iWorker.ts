@@ -426,7 +426,7 @@ export function summarizeDeltaBatch(
   const warningSummary = uninitializedAddresses.length
     ? ` 주의. 초기화되지 않은 메모리 ${uninitializedAddresses
         .map((address) => formatHex(address))
-        .join(", ")}를 읽었습니다.`
+        .join(", ")}에서 읽기를 수행했습니다.`
     : "";
   return `${deltas.length}개 명령어를 실행했습니다. 레지스터 쓰기 ${registerWrites}회, 메모리 읽기 ${memoryReads}회, 메모리 쓰기 ${memoryWrites}회. 현재 PC ${formatHex(pc)}.${warningSummary}`;
 }

@@ -120,7 +120,7 @@ export class Rv32iMachine {
       if (!Number.isInteger(register) || register < 0 || register > 31) {
         throw new Rv32iError(
           "INITIAL_REGISTER",
-          `초기 레지스터 x${index}를 설정할 수 없습니다.`,
+          `초기 레지스터 번호가 범위를 벗어났습니다: x${index}.`,
         );
       }
       if (register !== 0) this.registers[register] = value >>> 0;
@@ -229,7 +229,7 @@ export class Rv32iMachine {
           addresses: uninitializedAddresses,
           message: `초기화되지 않은 메모리 ${uninitializedAddresses
             .map((address) => formatHex(address))
-            .join(", ")}를 읽었습니다. 표시된 0은 backing byte일 뿐, 초기값으로 가정하면 안 됩니다.`,
+            .join(", ")}에서 읽기를 수행했습니다. 표시된 0은 backing byte일 뿐, 초기값으로 가정하면 안 됩니다.`,
         });
       }
       writeRegister(rd.index, value);

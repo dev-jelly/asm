@@ -103,12 +103,12 @@ export class ByteMemory {
     if (size === 4) {
       throw new Rv32iError(
         "MISALIGNED_WORD",
-        `주소 ${formatHex(address)}는 4바이트 word 경계에 정렬되지 않았습니다.`,
+        `주소: ${formatHex(address)}. 4바이트 word 경계에 정렬되지 않았습니다.`,
       );
     }
     throw new Rv32iError(
       "MISALIGNED_HALF",
-      `주소 ${formatHex(address)}는 2바이트 halfword 경계에 정렬되지 않았습니다.`,
+      `주소: ${formatHex(address)}. 2바이트 halfword 경계에 정렬되지 않았습니다.`,
     );
   }
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { registerSummary } from "../app/components/ExecutionTimeline";
+import { describeDelta } from "../app/components/PredictionComparison";
 import { traceAfterBack } from "../app/hooks/useRv32iWorker";
 import { Rv32iMachine } from "../lib/rv32i/machine";
 
@@ -30,5 +31,20 @@ test("timeline register summary distinguishes ignored and committed writes", () 
   assert.equal(
     registerSummary(committed),
     "x5 0x00000000 → 0x00000007",
+  );
+});
+
+test("store comparison preserves unknown bytes instead of exposing backing zeros", () => {
+  const delta = new Rv32iMachine("sw x7, 0(x10)", {
+    initialRegisters: { 7: 0x12345678 },
+  }).step();
+
+  assert.match(
+    describeDelta(delta),
+    /\?\? \?\? \?\? \?\?에서 78 56 34 12로 바뀌었습니다\./,
+  );
+  assert.doesNotMatch(
+    describeDelta(delta),
+    /00 00 00 00에서 78 56 34 12/,
   );
 });

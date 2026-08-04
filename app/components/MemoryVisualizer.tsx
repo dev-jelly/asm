@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@astryxdesign/core/SegmentedControl";
+import { Text } from "@astryxdesign/core/Text";
 import { useMemo, useState } from "react";
 import { formatHex } from "../../lib/rv32i/memory";
 import type {
@@ -39,6 +44,12 @@ const UNIT_LABELS: Record<UnitSize, string> = {
   1: "1바이트 (byte)",
   2: "2바이트 (halfword)",
   4: "4바이트 (word)",
+};
+
+const UNIT_CONTROL_LABELS: Record<UnitSize, string> = {
+  1: "1B · byte",
+  2: "2B · half",
+  4: "4B · word",
 };
 
 const NUMBER_FORMAT_LABELS: Record<NumberFormat, string> = {
@@ -294,38 +305,66 @@ export function MemoryVisualizer({
           </p>
         ) : null}
 
-        <div className="memory-view-options">
-          <fieldset>
-            <legend>데이터 크기</legend>
-            {([1, 2, 4] as const).map((size) => (
-              <label key={size}>
-                <input
-                  type="radio"
-                  name="memory-unit-size"
-                  value={size}
-                  checked={unitSize === size}
-                  onChange={() => selectUnitSize(size)}
+        <section className="memory-view-options" aria-label="메모리 보기 옵션">
+          <section
+            className="memory-option-group"
+            aria-labelledby="memory-unit-size-label"
+          >
+            <Text
+              as="p"
+              className="memory-option-label"
+              id="memory-unit-size-label"
+              type="label"
+            >
+              데이터 크기
+            </Text>
+            <SegmentedControl
+              className="memory-segmented-control"
+              label="데이터 크기"
+              layout="fill"
+              size="sm"
+              value={String(unitSize)}
+              onChange={(value) => selectUnitSize(Number(value) as UnitSize)}
+            >
+              {([1, 2, 4] as const).map((size) => (
+                <SegmentedControlItem
+                  key={size}
+                  label={UNIT_CONTROL_LABELS[size]}
+                  value={String(size)}
                 />
-                <span>{UNIT_LABELS[size]}</span>
-              </label>
-            ))}
-          </fieldset>
-          <fieldset>
-            <legend>값 표현</legend>
-            {(["hex", "unsigned", "signed"] as const).map((format) => (
-              <label key={format}>
-                <input
-                  type="radio"
-                  name="memory-number-format"
+              ))}
+            </SegmentedControl>
+          </section>
+          <section
+            className="memory-option-group"
+            aria-labelledby="memory-number-format-label"
+          >
+            <Text
+              as="p"
+              className="memory-option-label"
+              id="memory-number-format-label"
+              type="label"
+            >
+              값 표현
+            </Text>
+            <SegmentedControl
+              className="memory-segmented-control"
+              label="값 표현"
+              layout="fill"
+              size="sm"
+              value={numberFormat}
+              onChange={(value) => setNumberFormat(value as NumberFormat)}
+            >
+              {(["hex", "unsigned", "signed"] as const).map((format) => (
+                <SegmentedControlItem
+                  key={format}
+                  label={NUMBER_FORMAT_LABELS[format]}
                   value={format}
-                  checked={numberFormat === format}
-                  onChange={() => setNumberFormat(format)}
                 />
-                <span>{NUMBER_FORMAT_LABELS[format]}</span>
-              </label>
-            ))}
-          </fieldset>
-        </div>
+              ))}
+            </SegmentedControl>
+          </section>
+        </section>
       </div>
 
       <div className="memory-window-caption" aria-live="polite">
@@ -621,7 +660,7 @@ function littleEndianExplanation(
     return "byte는 한 주소의 8비트를 그대로 읽습니다.";
   }
   const value = assembleLittleEndian(bytes);
-  return `가장 낮은 주소의 ${bytes[0].toString(16).padStart(2, "0")}가 최하위 8비트입니다. 주소가 높아질수록 더 높은 자리에 놓여 ${formatValue(value, width, "hex")}로 조립됩니다.`;
+  return `최하위 8비트: ${bytes[0].toString(16).padStart(2, "0")} (가장 낮은 주소). 주소가 높아질수록 더 높은 자리에 놓여 ${formatValue(value, width, "hex")}로 조립됩니다.`;
 }
 
 function describeUnit(

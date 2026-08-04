@@ -76,7 +76,7 @@ target: addi x8, x0, 2`,
       taken.instruction,
       taken.registers,
     ),
-    /0x00000008로 분기/,
+    /다음 PC = 0x00000008 \(분기\)/,
   );
 
   const notTaken = currentInstruction(
@@ -100,7 +100,7 @@ target: addi x8, x0, 2`,
       notTaken.instruction,
       notTaken.registers,
     ),
-    /0x00000004로 이동/,
+    /다음 PC = 0x00000004 \(순차 실행\)/,
   );
 });
 

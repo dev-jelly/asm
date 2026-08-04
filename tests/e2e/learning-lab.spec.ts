@@ -29,11 +29,11 @@ async function completePcMission(page: Page) {
   const gate = predictionGate(page);
 
   await gate.getByLabel("0x00000004", { exact: true }).check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
   await gate
     .getByLabel("목적지 레지스터에 결과를 씁니다.")
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
   await expect(lab.getByText("상태: 실행 완료")).toBeVisible();
 }
 
@@ -59,24 +59,24 @@ test("필수 예측 뒤 Step, Back, Reset이 상태와 checkpoint를 되돌린�
   const gate = predictionGate(page);
 
   await gate.getByLabel("0x00000004", { exact: true }).check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
 
   await expect(lab.getByText("Step 1", { exact: true }).first()).toBeVisible();
   await expect(lab.getByText("예측 일치", { exact: true })).toBeVisible();
   await expect(
-    lab.getByRole("button", { name: "Back", exact: true }),
+    lab.getByRole("button", { name: "한 단계 되돌리기", exact: true }),
   ).toBeEnabled();
 
-  await lab.getByRole("button", { name: "Back", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 되돌리기", exact: true }).click();
   await expect(lab.getByText("아직 실행 기록이 없습니다.")).toBeVisible();
   await expect(
     lab.getByLabel("실행할 RV32I 프로그램").getByText("addi x5, x0, 7"),
   ).toBeVisible();
 
-  await lab.getByRole("button", { name: "Reset", exact: true }).click();
+  await lab.getByRole("button", { name: "처음부터", exact: true }).click();
   await expect(gate.getByLabel("0x00000004", { exact: true })).not.toBeChecked();
   await expect(
-    lab.getByRole("button", { name: "Run", exact: true }),
+    lab.getByRole("button", { name: "연속 실행", exact: true }),
   ).toBeDisabled();
   await expect(lab.getByText("상태: 예측 대기")).toBeVisible();
 });
@@ -92,12 +92,23 @@ test("완료 뒤에도 핵심 checkpoint 피드백을 보존하고 Back은 직�
     gate.getByText("1행을 실행한 직후 PC는 어디를 가리킬까요?"),
   ).toBeVisible();
   await expect(gate.getByLabel("0x00000004", { exact: true })).toBeChecked();
-  await expect(lab.getByText("예측 일치", { exact: true })).toBeVisible();
+  await expect(
+    lab.getByText("핵심 예측 일치", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    lab.getByText(
+      "방금 실행한 Step 2: 예측이 실제 결과와 일치했습니다.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(lab.locator(".prediction-comparison")).toContainText(
+    "Step 1, 코드 1행의 결과를 보존해 표시합니다.",
+  );
   await expect(lab.locator(".prediction-comparison")).toContainText(
     "RV32I 명령어는 4바이트입니다.",
   );
 
-  await lab.getByRole("button", { name: "Back", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 되돌리기", exact: true }).click();
   await expect(lab.getByText("상태: 예측 대기")).toBeVisible();
   await expect(lab.locator(".delta-view")).toContainText(
     "addi x5, x0, 7 실행",
@@ -117,6 +128,34 @@ test("완료 뒤에도 핵심 checkpoint 피드백을 보존하고 Back은 직�
   ).toHaveCount(0);
   await expect(lab.locator(".pc-visualizer")).toContainText("0x00000000");
   await expect(lab.locator(".pc-visualizer")).toContainText("0x00000004");
+});
+
+test("마지막 Step 안내와 보존된 핵심 예측 결과를 서로 구분한다", async ({
+  page,
+}) => {
+  const lab = learningLab(page);
+  const gate = predictionGate(page);
+
+  await gate.getByLabel("0x00000008", { exact: true }).check();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
+  await gate
+    .getByLabel("목적지 레지스터에 결과를 씁니다.")
+    .check();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
+
+  await expect(lab.getByText("상태: 실행 완료")).toBeVisible();
+  await expect(
+    lab.getByText("핵심 예측과 다름", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    lab.getByText(
+      "방금 실행한 Step 2: 예측이 실제 결과와 일치했습니다.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(lab.locator(".lab-announcement")).toContainText(
+    "Step 2: 예측이 실제 결과와 일치했습니다.",
+  );
 });
 
 test("예측 라디오의 Alt+S와 Run 체크박스의 Alt+R이 동작하고 결과를 알린다", async ({
@@ -166,7 +205,7 @@ test("예측 라디오의 Alt+S와 Run 체크박스의 Alt+R이 동작하고 결
     announcementBeforeNextChoice ?? "",
   );
   const runConfirmation = lab.getByLabel(
-    "Run은 현재 예측 이후 단계의 확인 과정을 건너뜁니다.",
+    "연속 실행은 현재 예측을 실행한 뒤 이후 단계를 예측 없이 계속 실행합니다.",
   );
   await runConfirmation.check();
   await expect(runConfirmation).toBeFocused();
@@ -193,7 +232,15 @@ test("예측 라디오의 Alt+S와 Run 체크박스의 Alt+R이 동작하고 결
   await expect(lab.locator(".lab-announcement")).toContainText(
     "예측과 실제 결과가 다릅니다.",
   );
-  await expect(lab.getByText("예측 일치", { exact: true })).toBeVisible();
+  await expect(
+    lab.getByText("핵심 예측 일치", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    lab.getByText(
+      "방금 실행한 Step 2: 예측과 실제 결과가 다릅니다.",
+      { exact: true },
+    ),
+  ).toBeVisible();
   await expect(
     lab
       .locator(".mission-transfer")
@@ -227,9 +274,22 @@ test("핵심 예측 건너뛰기는 정답 시도와 구분해 저장하고 안�
 }) => {
   const lab = learningLab(page);
   await predictionGate(page)
-    .getByRole("button", { name: "잘 모르겠어요. 결과 보기" })
+    .getByRole("button", { name: "잘 모르겠어요. 예측 건너뛰기" })
     .click();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await expect(
+    predictionGate(page).getByRole("button", {
+      name: "잘 모르겠어요. 예측 건너뛰기",
+    }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(predictionGate(page).locator(".skip-note")).toContainText(
+    "한 단계 실행 버튼을 누르면 실제 결과를 확인합니다.",
+  );
+  await expect(lab.getByText("상태: 예측 대기")).toBeVisible();
+  await expect(lab.getByText("Step 1", { exact: true })).toHaveCount(0);
+  await expect(
+    lab.getByRole("button", { name: "한 단계 실행", exact: true }),
+  ).toBeEnabled();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
 
   await expect(lab.locator(".lab-announcement")).toContainText(
     "예측 없이 실제 결과를 확인했습니다.",
@@ -251,7 +311,7 @@ test("핵심 예측 건너뛰기는 정답 시도와 구분해 저장하고 안�
   await predictionGate(page)
     .getByLabel("목적지 레지스터에 결과를 씁니다.")
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
   await expect(lab.getByText("상태: 실행 완료")).toBeVisible();
   await expect(lab.locator(".mission-context")).toContainText("연습 완료");
 });
@@ -265,7 +325,7 @@ test("x0 쓰기 무시는 상태 표와 실행 기록에서 같은 의미로 보
   await predictionGate(page)
     .getByLabel("0x00000000", { exact: true })
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
 
   await expect(lab.locator(".delta-view")).toContainText(
     "레지스터 쓰기 무시: x0",
@@ -292,9 +352,9 @@ test("빠른 이중 Step도 한 명령어만 실행하고 checkpoint를 건너�
 
   await lab.evaluate((element) => {
     const step = [...element.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === "Step",
+      (button) => button.textContent?.trim() === "한 단계 실행",
     );
-    if (!step) throw new Error("Step button not found");
+    if (!step) throw new Error("한 단계 실행 button not found");
     step.click();
     step.click();
   });
@@ -338,7 +398,7 @@ test("페이지에는 RV32I Worker가 하나뿐이며 중단 뒤 현재 미션�
   await expect(alert).toContainText("Worker가 예기치 않게 중단");
   await expect(
     learningLab(page).getByRole("button", {
-      name: "Reset",
+      name: "처음부터",
       exact: true,
     }),
   ).toBeDisabled();
@@ -355,6 +415,22 @@ test("페이지에는 RV32I Worker가 하나뿐이며 중단 뒤 현재 미션�
       .workers()
       .filter((candidate) => candidate.url().includes("rv32i.worker")),
   ).toHaveLength(1);
+});
+
+test("플레이그라운드 링크는 소개가 아니라 실제 실행 작업공간으로 이동한다", async ({
+  page,
+}) => {
+  await page.locator("#reference").scrollIntoViewIfNeeded();
+  await page.getByRole("link", { name: "플레이그라운드", exact: true }).click();
+
+  await expect(page).toHaveURL(/#playground$/);
+  const playground = page.locator("#playground");
+  await expect(playground).toHaveClass(/lab-workspace/);
+  await expect(playground).toBeInViewport();
+  await expect(page.locator(".lab-intro")).not.toHaveAttribute(
+    "id",
+    "playground",
+  );
 });
 
 test("lesson deep-link와 브라우저 뒤로가기가 같은 단일 실험실을 전환한다", async ({
@@ -486,7 +562,7 @@ test("signed load 미션은 checkpoint 예측과 실제 부호 확장을 비교�
   const gate = predictionGate(page);
 
   await gate.getByLabel("0xffffff80", { exact: true }).check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
 
   await expect(lab.getByText("예측 일치", { exact: true })).toBeVisible();
   await expect(lab.getByText("0xffffff80").first()).toBeVisible();
@@ -495,7 +571,7 @@ test("signed load 미션은 checkpoint 예측과 실제 부호 확장을 비교�
   await gate
     .getByLabel("목적지 레지스터에 결과를 씁니다.")
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
   await expect(lab.getByText("상태: 실행 완료")).toBeVisible();
   await expect(lab.getByText("0x00000080").first()).toBeVisible();
 });
@@ -547,8 +623,10 @@ test("오답은 정답을 노출하지 않고 재시도 성공을 복습 후 해
   );
 
   await transfer.getByLabel("0x00000004", { exact: true }).check();
-  await transfer.getByRole("button", { name: "답 확인" }).click();
+  const checkAnswer = transfer.getByRole("button", { name: "답 확인" });
+  await checkAnswer.click();
   await expect(transfer.getByText("한 번 더 생각해 보세요.")).toBeVisible();
+  await expect(checkAnswer).toBeFocused();
   await expect(transfer).toContainText(
     "실행한 명령어 수와 명령어 한 개의 바이트 길이를 따로 세어 보세요.",
   );
@@ -570,8 +648,11 @@ test("오답은 정답을 노출하지 않고 재시도 성공을 복습 후 해
   await expect(transfer).toContainText(
     "실행한 명령어 수와 명령어 한 개의 바이트 길이를 따로 세어 보세요.",
   );
-  await transfer.getByRole("button", { name: "답 확인" }).click();
+  await checkAnswer.click();
   await expect(transfer.getByText("복습 후 해결했습니다.")).toBeVisible();
+  await expect(
+    transfer.getByRole("button", { name: "다음 미션" }),
+  ).toBeFocused();
   await expect(lab.locator(".mission-context")).toContainText("복습 후 해결");
 
   await expect
@@ -624,6 +705,9 @@ test("첫 시도 전이 성공만 혼자 해결 증거가 된다", async ({ page
   await expect(
     transfer.getByText("첫 시도에 혼자 해결했습니다."),
   ).toBeVisible();
+  await expect(
+    transfer.getByRole("button", { name: "다음 미션" }),
+  ).toBeFocused();
   await expect(lab.locator(".mission-context")).toContainText("혼자 해결");
 
   await expect
@@ -640,7 +724,7 @@ test("첫 시도 전이 성공만 혼자 해결 증거가 된다", async ({ page
       transferPassed: true,
     });
 
-  await lab.getByRole("button", { name: "Reset", exact: true }).click();
+  await lab.getByRole("button", { name: "처음부터", exact: true }).click();
   await completePcMission(page);
   await transfer.getByLabel("0x0000000c", { exact: true }).check();
   await transfer.getByRole("button", { name: "답 확인" }).click();
@@ -671,7 +755,7 @@ test("byte store의 변경 범위와 초기화 상태를 Back과 Reset으로 복
   await predictionGate(page)
     .getByLabel("0x00001001에 0x44", { exact: true })
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
   await expect(lab.getByText("상태: 실행 완료")).toBeVisible();
   await expect(
     lab.getByRole("button", {
@@ -679,14 +763,14 @@ test("byte store의 변경 범위와 초기화 상태를 Back과 Reset으로 복
     }),
   ).toBeVisible();
 
-  await lab.getByRole("button", { name: "Back", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 되돌리기", exact: true }).click();
   await expect(
     lab.getByRole("button", {
       name: /0x00001001, 1바이트 \(byte\), 값 0xbb, 초기화됨/,
     }),
   ).toBeVisible();
 
-  await lab.getByRole("button", { name: "Reset", exact: true }).click();
+  await lab.getByRole("button", { name: "처음부터", exact: true }).click();
   await expect(
     lab.getByRole("button", {
       name: /0x00001001, 1바이트 \(byte\), 값 0xbb, 초기화됨/,
@@ -708,8 +792,23 @@ test("little-endian word 보기, 키보드 셀 이동, 주소 검증이 동작�
   await predictionGate(page)
     .getByLabel("78 56 34 12", { exact: true })
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
   await expect(lab.getByText("상태: 실행 완료")).toBeVisible();
+  await expect(lab.locator(".prediction-comparison")).toContainText(
+    "?? ?? ?? ??에서 78 56 34 12로 바뀌었습니다.",
+  );
+  await expect(lab.locator(".delta-view")).toContainText(
+    "메모리 쓰기: 0x00001000 바이트 ?? ?? ?? ?? → 78 56 34 12",
+  );
+  await expect(lab.locator(".prediction-comparison")).not.toContainText(
+    "00 00 00 00에서 78 56 34 12",
+  );
+  await expect(lab.locator(".prediction-review-context")).toContainText(
+    "Step 1, 코드 1행은 이 미션의 핵심 예측 결과입니다.",
+  );
+  await expect(lab.locator(".prediction-review-context")).not.toContainText(
+    "방금 실행한 Step의 안내와는 별도입니다.",
+  );
 
   const firstWord = lab.getByRole("button", {
     name: /0x00001000, 4바이트 \(word\), 값 0x12345678/,
@@ -723,16 +822,26 @@ test("little-endian word 보기, 키보드 셀 이동, 주소 검증이 동작�
     }),
   ).toBeFocused();
 
-  await lab.getByLabel("1바이트 (byte)", { exact: true }).check();
+  await lab
+    .getByRole("radio", { name: "1B · byte", exact: true })
+    .click();
   const firstByte = lab.getByRole("button", {
     name: /0x00001000, 1바이트 \(byte\), 값 0x78/,
   });
   await firstByte.focus();
+  const memoryColumnCount = await firstByte.evaluate((button) => {
+    const grid = button.parentElement;
+    if (!grid) return 1;
+    return Math.max(
+      1,
+      getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean)
+        .length,
+    );
+  });
   await page.keyboard.press("ArrowDown");
-  const nextByteAddress =
-    (page.viewportSize()?.width ?? 1280) <= 420
-      ? "0x00001002"
-      : "0x00001004";
+  const nextByteAddress = `0x${(0x1000 + memoryColumnCount)
+    .toString(16)
+    .padStart(8, "0")}`;
   await expect(
     lab.getByRole("button", {
       name: new RegExp(
@@ -748,6 +857,101 @@ test("little-endian word 보기, 키보드 셀 이동, 주소 검증이 동작�
   );
 });
 
+test("1440px의 좁은 메모리 패널에서도 보기 제어가 겹치지 않고 정확히 선택된다", async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== "desktop-chromium",
+    "폭 행렬은 desktop 프로젝트에서 한 번만 검증합니다.",
+  );
+
+  for (const width of [1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await openLesson(page, "memory-little-endian");
+    const visualizer = learningLab(page).locator(".memory-visualizer");
+
+    const unitGroup = visualizer.getByRole("radiogroup", {
+      name: "데이터 크기",
+    });
+    for (const label of ["1B · byte", "2B · half", "4B · word"]) {
+      const option = unitGroup.getByRole("radio", { name: label, exact: true });
+      await option.click();
+      await expect(option).toHaveAttribute("aria-checked", "true");
+    }
+
+    const formatGroup = visualizer.getByRole("radiogroup", {
+      name: "값 표현",
+    });
+    for (const label of ["16진수", "부호 없음", "부호 있음"]) {
+      const option = formatGroup.getByRole("radio", {
+        name: label,
+        exact: true,
+      });
+      await option.click();
+      await expect(option).toHaveAttribute("aria-checked", "true");
+    }
+
+    await unitGroup
+      .getByRole("radio", { name: "1B · byte", exact: true })
+      .click();
+    await visualizer.locator(".memory-toolbar").scrollIntoViewIfNeeded();
+    const geometry = await visualizer.evaluate((root) => {
+      const toolbar = root.querySelector<HTMLElement>(".memory-toolbar");
+      if (!toolbar) throw new Error("memory toolbar not found");
+      const toolbarRect = toolbar.getBoundingClientRect();
+      const controls = [...toolbar.querySelectorAll<HTMLElement>("button, input")]
+        .filter((control) => {
+          const rect = control.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        })
+        .map((control) => {
+          const rect = control.getBoundingClientRect();
+          const hit = document.elementFromPoint(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
+          );
+          return {
+            inside:
+              rect.left >= toolbarRect.left - 1 &&
+              rect.right <= toolbarRect.right + 1 &&
+              rect.top >= toolbarRect.top - 1 &&
+              rect.bottom <= toolbarRect.bottom + 1,
+            hit: hit === control || (hit !== null && control.contains(hit)),
+          };
+        });
+      const groupOverflow = [
+        ...toolbar.querySelectorAll<HTMLElement>(".memory-segmented-control"),
+      ].map((group) => group.scrollWidth - group.clientWidth);
+      const cellClips = [
+        ...root.querySelectorAll<HTMLElement>(
+          ".memory-cell-address, .memory-cell-state",
+        ),
+      ].map((part) => part.scrollWidth - part.clientWidth);
+      return { controls, groupOverflow, cellClips };
+    });
+
+    expect(geometry.controls.every(({ inside, hit }) => inside && hit)).toBe(
+      true,
+    );
+    expect(Math.max(0, ...geometry.groupOverflow)).toBeLessThanOrEqual(1);
+    expect(Math.max(0, ...geometry.cellClips)).toBeLessThanOrEqual(1);
+    await expectNoHorizontalOverflow(page);
+
+    await visualizer
+      .getByRole("button", { name: "다음 16바이트 보기" })
+      .click();
+    await expect(visualizer.locator(".memory-window-caption strong")).toHaveText(
+      "0x00001010 - 0x0000101f",
+    );
+    await visualizer
+      .getByRole("button", { name: "이전 16바이트 보기" })
+      .click();
+    await expect(visualizer.locator(".memory-window-caption strong")).toHaveText(
+      "0x00001000 - 0x0000100f",
+    );
+  }
+});
+
 test("분기 checkpoint는 첫 Step에만 나오고 반복마다 실제 레지스터로 다음 PC를 묻는다", async ({
   page,
 }) => {
@@ -760,51 +964,51 @@ test("분기 checkpoint는 첫 Step에만 나오고 반복마다 실제 레지�
       exact: true,
     })
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
   await expect(
     gate.getByText("첫 beq의 분기 결과와 다음 PC는 무엇일까요?"),
   ).toHaveCount(0);
   await gate
     .getByLabel("계산한 메모리 주소에 값을 씁니다.")
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
   await gate
     .getByLabel("목적지 레지스터에 결과를 씁니다.")
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
 
   await expect(
     gate.getByText("분기 조건이 성립할까요? 다음 PC도 함께 예측하세요."),
   ).toBeVisible();
   const unconditionalBranch = gate.getByLabel(
-    /x0 0x00000000와 x0 0x00000000가 같아서 0x00000000로 분기합니다\./,
+    /비교 값: x0 = 0x00000000, x0 = 0x00000000\. 두 값이 같으므로 다음 PC = 0x00000000 \(분기\)\./,
   );
   await unconditionalBranch.check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
 
   await expect(
     gate.getByText("첫 beq의 분기 결과와 다음 PC는 무엇일까요?"),
   ).toHaveCount(0);
   await expect(
     gate.getByLabel(
-      /x5 0x00001001와 x6 0x00001004가 달라서 0x00000004로 이동합니다\./,
+      /비교 값: x5 = 0x00001001, x6 = 0x00001004\. 두 값이 다르므로 다음 PC = 0x00000004 \(순차 실행\)\./,
     ),
   ).toBeVisible();
   await expect(gate.locator('input[type="radio"]')).toHaveCount(2);
   await gate
     .getByLabel(
-      /x5 0x00001001와 x6 0x00001004가 달라서 0x00000004로 이동합니다\./,
+      /비교 값: x5 = 0x00001001, x6 = 0x00001004\. 두 값이 다르므로 다음 PC = 0x00000004 \(순차 실행\)\./,
     )
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
 
   await gate
     .getByLabel("계산한 메모리 주소에 값을 씁니다.")
     .check();
   await lab
-    .getByLabel("Run은 현재 예측 이후 단계의 확인 과정을 건너뜁니다.")
+    .getByLabel("연속 실행은 현재 예측을 실행한 뒤 이후 단계를 예측 없이 계속 실행합니다.")
     .check();
-  await lab.getByRole("button", { name: "Run", exact: true }).click();
+  await lab.getByRole("button", { name: "연속 실행", exact: true }).click();
 
   await expect(lab.getByText("상태: 실행 완료")).toBeVisible();
   for (const address of [
@@ -826,6 +1030,17 @@ test("분기 checkpoint는 첫 Step에만 나오고 반복마다 실제 레지�
       name: /0x00001003, 1바이트 \(byte\), 값 0x5a, 초기화됨, 최근 쓰기/,
     }),
   ).toBeVisible();
+  const transfer = lab.locator(".mission-transfer");
+  await transfer
+    .getByLabel("0x1002부터 0x1004까지 채워지고 x8 = 0x1005", {
+      exact: true,
+    })
+    .check();
+  await transfer.getByRole("button", { name: "답 확인" }).click();
+  await expect(transfer.locator(".transfer-feedback")).toBeFocused();
+  await expect(
+    transfer.getByRole("button", { name: "다음 미션" }),
+  ).toHaveCount(0);
 });
 
 test("무한 분기 사용자 코드는 Run 중 실제 Pause가 가능하다", async ({
@@ -836,18 +1051,18 @@ test("무한 분기 사용자 코드는 Run 중 실제 Pause가 가능하다", a
 
   await predictionGate(page)
     .getByLabel(
-      /x0 0x00000000와 x0 0x00000000가 같아서 0x00000000로 분기합니다\./,
+      /비교 값: x0 = 0x00000000, x0 = 0x00000000\. 두 값이 같으므로 다음 PC = 0x00000000 \(분기\)\./,
     )
     .check();
   await lab
-    .getByLabel("Run은 현재 예측 이후 단계의 확인 과정을 건너뜁니다.")
+    .getByLabel("연속 실행은 현재 예측을 실행한 뒤 이후 단계를 예측 없이 계속 실행합니다.")
     .check();
 
   await lab.evaluate((element) => {
     const pause = [...element.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === "Pause",
+      (button) => button.textContent?.trim() === "일시정지",
     );
-    if (!pause) throw new Error("Pause button not found");
+    if (!pause) throw new Error("일시정지 button not found");
     const clickWhenEnabled = () => {
       if (pause.disabled) return;
       observer.disconnect();
@@ -860,7 +1075,7 @@ test("무한 분기 사용자 코드는 Run 중 실제 Pause가 가능하다", a
     });
     clickWhenEnabled();
   });
-  await lab.getByRole("button", { name: "Run", exact: true }).click();
+  await lab.getByRole("button", { name: "연속 실행", exact: true }).click();
   await expect(lab.getByText("상태: 일시정지")).toBeVisible();
 });
 
@@ -873,7 +1088,7 @@ test("잘못 정렬된 사용자 코드를 오류 뒤 현재 미션으로 복원
   await predictionGate(page)
     .getByLabel("목적지 레지스터에 결과를 씁니다.")
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
   await expect(lab.getByRole("alert")).toContainText(
     "2바이트 halfword 경계",
   );
@@ -900,7 +1115,7 @@ test("초기화되지 않은 load를 값이 아니라 경고와 backing byte로 
   await predictionGate(page)
     .getByLabel("목적지 레지스터에 결과를 씁니다.")
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
 
   await expect(lab.getByText("주의:", { exact: true })).toBeVisible();
   await expect(lab.locator(".delta-view").getByText(/backing byte/)).toBeVisible();
@@ -915,7 +1130,7 @@ test("사용자 코드 완료는 선택된 미션의 학습 진도를 만들지 
   await predictionGate(page)
     .getByLabel("목적지 레지스터에 결과를 씁니다.")
     .check();
-  await lab.getByRole("button", { name: "Step", exact: true }).click();
+  await lab.getByRole("button", { name: "한 단계 실행", exact: true }).click();
   await expect(lab.getByText("상태: 실행 완료")).toBeVisible();
 
   expect(
@@ -929,11 +1144,20 @@ test("사용자 코드 완료는 선택된 미션의 학습 진도를 만들지 
 
 test("모듈 탐색은 focus를 보존하고 모바일에서도 가로 overflow를 만들지 않는다", async ({
   page,
-}) => {
+}, testInfo) => {
+  if (testInfo.project.name === "desktop-chromium") {
+    await page.setViewportSize({ width: 950, height: 900 });
+    await page.reload();
+    await expect(learningLab(page).getByText("상태: 예측 대기")).toBeVisible();
+  }
   const modules = learningLab(page).getByRole("navigation", {
     name: "RV32I 학습 모듈",
   });
   await expect(modules.getByRole("button")).toHaveCount(4);
+  const clippedTitles = await modules.locator("strong").evaluateAll((titles) =>
+    titles.filter((title) => title.scrollWidth > title.clientWidth + 1).length,
+  );
+  expect(clippedTitles).toBe(0);
 
   const memoryModule = modules.getByRole("button", {
     name: /주소와 메모리/,
@@ -961,18 +1185,26 @@ test("320px 휴대폰과 768px 태블릿에서 실험실과 전이 문제가 가
     await page.reload();
     await openLesson(page, "memory-partial-store");
     await expectNoHorizontalOverflow(page);
+    if (width === 320) {
+      await expect(
+        learningLab(page).locator(".module-scroll-hint"),
+      ).toContainText("옆으로 넘겨 더 보기");
+      await expect(
+        learningLab(page).locator(".module-scroll-hint"),
+      ).toBeVisible();
+    }
 
     await predictionGate(page)
       .getByLabel("11 22 dd cc", { exact: true })
       .check();
     await learningLab(page)
-      .getByRole("button", { name: "Step", exact: true })
+      .getByRole("button", { name: "한 단계 실행", exact: true })
       .click();
     await predictionGate(page)
       .getByLabel("목적지 레지스터에 결과를 씁니다.")
       .check();
     await learningLab(page)
-      .getByRole("button", { name: "Step", exact: true })
+      .getByRole("button", { name: "한 단계 실행", exact: true })
       .click();
     await expect(
       learningLab(page).getByText("상태: 실행 완료"),

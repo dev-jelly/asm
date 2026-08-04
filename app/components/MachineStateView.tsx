@@ -1,5 +1,6 @@
 import { formatHex } from "../../lib/rv32i/memory";
 import type { Snapshot, StepDelta } from "../../lib/rv32i/types";
+import { formatMemoryBytes } from "../lib/formatMemoryBytes";
 import { MemoryVisualizer } from "./MemoryVisualizer";
 
 const RELEVANT_REGISTERS = [0, 5, 6, 7, 8, 10] as const;
@@ -214,8 +215,11 @@ export function MachineStateView({
               {lastDelta.memoryPatches.map((patch) => (
                 <li key={`memory-${patch.address}`}>
                   메모리 쓰기: {formatHex(patch.address)} 바이트{" "}
-                  {patch.before.map(byteHex).join(" ")} →{" "}
-                  {patch.after.map(byteHex).join(" ")}
+                  {formatMemoryBytes(
+                    patch.before,
+                    patch.initializedBefore,
+                  )}{" "}
+                  → {formatMemoryBytes(patch.after, patch.initializedAfter)}
                 </li>
               ))}
               {lastDelta.memoryAccesses
@@ -223,19 +227,17 @@ export function MachineStateView({
                 .map((access) => (
                   <li key={`read-${access.address}`}>
                     메모리 읽기: {formatHex(access.address)}에서{" "}
-                    {access.bytes.map(byteHex).join(" ")}를 읽어{" "}
-                    {formatHex(access.value)}로 조립
+                    {access.size}바이트를 읽었습니다. 읽은 바이트:{" "}
+                    {formatMemoryBytes(access.bytes)}. 조립 결과:{" "}
+                    {formatHex(access.value)}
                   </li>
                 ))}
               {lastDelta.controlFlow.kind === "branch" ? (
                 <li>
-                  분기: {formatHex(lastDelta.controlFlow.lhs ?? 0)}와{" "}
-                  {formatHex(lastDelta.controlFlow.rhs ?? 0)}가{" "}
-                  {lastDelta.controlFlow.taken
-                    ? "같아서 분기합니다"
-                    : "달라서 다음 명령어로 이동합니다"}
-                  .
-                  다음 PC {formatHex(lastDelta.pcAfter)}
+                  분기 비교 값: {formatHex(lastDelta.controlFlow.lhs ?? 0)} /{" "}
+                  {formatHex(lastDelta.controlFlow.rhs ?? 0)}. 결과:{" "}
+                  {lastDelta.controlFlow.taken ? "같음, 분기" : "다름, 순차 실행"}.
+                  다음 PC: {formatHex(lastDelta.pcAfter)}
                 </li>
               ) : null}
               {lastDelta.warnings.map((warning) => (
@@ -260,8 +262,4 @@ export function MachineStateView({
       </section>
     </div>
   );
-}
-
-function byteHex(value: number): string {
-  return value.toString(16).padStart(2, "0");
 }

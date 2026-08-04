@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import type {
   MemoryMission,
   MemoryMissionId,
@@ -33,10 +34,21 @@ export function MissionTransfer({
   onCheck,
   onNext,
 }: MissionTransferProps) {
+  const nextMissionButtonRef = useRef<HTMLButtonElement>(null);
+  const feedbackRef = useRef<HTMLDivElement>(null);
   const completed =
     result === "independent" ||
     result === "reviewed" ||
     result === "confirmed";
+
+  useEffect(() => {
+    if (!completed) return;
+    if (nextMissionId) {
+      nextMissionButtonRef.current?.focus();
+      return;
+    }
+    feedbackRef.current?.focus();
+  }, [completed, nextMissionId]);
 
   return (
     <section
@@ -103,17 +115,23 @@ export function MissionTransfer({
             답 확인
           </button>
           {completed && nextMissionId ? (
-            <button type="button" onClick={() => onNext(nextMissionId)}>
+            <button
+              ref={nextMissionButtonRef}
+              type="button"
+              onClick={() => onNext(nextMissionId)}
+            >
               다음 미션
             </button>
           ) : null}
         </div>
 
         <div
+          ref={feedbackRef}
           className="transfer-feedback"
           role="status"
           aria-live="polite"
           aria-atomic="true"
+          tabIndex={completed && !nextMissionId ? -1 : undefined}
           data-result={result ?? undefined}
         >
           {result === "independent" ? (

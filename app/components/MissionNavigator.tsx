@@ -1,5 +1,7 @@
 "use client";
 
+import { Text } from "@astryxdesign/core/Text";
+import { useScrollOverflow } from "@astryxdesign/core/hooks";
 import { useEffect, useRef } from "react";
 import {
   getMemoryMissionsByModule,
@@ -35,6 +37,8 @@ export function MissionNavigator({
 }: MissionNavigatorProps) {
   const selectedModuleRef = useRef<HTMLButtonElement>(null);
   const selectedMissionRef = useRef<HTMLButtonElement>(null);
+  const { scrollRef, overflowStart, overflowEnd, hasOverflow } =
+    useScrollOverflow();
   const visibleMissions = getMemoryMissionsByModule(
     selectedMission.moduleId,
   );
@@ -64,7 +68,12 @@ export function MissionNavigator({
         </p>
       </div>
 
-      <nav className="module-switcher" aria-label="RV32I 학습 모듈">
+      <nav
+        ref={scrollRef}
+        className="module-switcher"
+        aria-label="RV32I 학습 모듈"
+        aria-describedby={hasOverflow ? "module-scroll-hint" : undefined}
+      >
         {MODULES.map((module) => {
           const missions = getMemoryMissionsByModule(module.id);
           const independent = missions.filter(
@@ -95,6 +104,19 @@ export function MissionNavigator({
           );
         })}
       </nav>
+      <Text
+        as="p"
+        className="module-scroll-hint"
+        color="secondary"
+        data-visible={hasOverflow || undefined}
+        id="module-scroll-hint"
+        type="supporting"
+        aria-hidden={!hasOverflow}
+      >
+        {overflowStart ? "← " : ""}
+        옆으로 넘겨 더 보기
+        {overflowEnd ? " →" : ""}
+      </Text>
 
       <nav className="mission-switcher" aria-label="현재 모듈의 학습 미션">
         {visibleMissions.map((mission) => {

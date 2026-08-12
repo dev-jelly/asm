@@ -2,10 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   clearProgress,
-  completeActivity,
   emptyProgress,
   exportProgress,
-  LEGACY_ACTIVITY_TO_MISSION,
   markMissionProgress,
   MISSION_IDS,
   PROGRESS_KEY,
@@ -194,7 +192,7 @@ test("v1 completed activities migrate to canonical guided mission evidence", () 
   const result = readProgress(storage);
   assert.equal(result.version, 3);
   assert.equal(
-    result.missions[LEGACY_ACTIVITY_TO_MISSION["tracer-bullet"]].status,
+    result.missions["memory-little-endian"].status,
     "guided",
   );
   assert.equal(result.missions["memory-signed-loads"].status, "guided");
@@ -389,13 +387,15 @@ test("v3 reads are sanitized and exports have deterministic ordering", () => {
   );
 });
 
-test("storage helpers and the v1 completion wrapper persist v3 data", () => {
+test("storage helpers persist canonical v3 data", () => {
   const storage = createStorage();
   saveMissionProgress(storage, "memory-store-byte", {
     predictionAttempt: true,
     lastAttemptAt: "2026-07-29T00:00:00Z",
   });
-  const result = completeActivity(storage, "little-endian");
+  const result = saveMissionProgress(storage, "memory-little-endian", {
+    status: "guided",
+  });
   const persisted = JSON.parse(storage.values.get(PROGRESS_KEY) ?? "{}");
 
   assert.equal(persisted.version, 3);

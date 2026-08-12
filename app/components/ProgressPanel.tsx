@@ -1,17 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   getMemoryMissionsByModule,
   type MemoryMissionModuleId,
 } from "../content/memoryMissions";
 import {
-  clearProgress,
-  emptyProgress,
+  clearLocalProgress,
   exportProgress,
-  type ProgressData,
-  readProgress,
 } from "../lib/progress";
+import { useLocalProgress } from "../hooks/useLocalProgress";
 
 const MODULES: readonly {
   id: MemoryMissionModuleId;
@@ -24,54 +22,16 @@ const MODULES: readonly {
   { id: "b", marker: "B", label: "분기와 반복" },
 ] as const;
 
-type ProgressState =
-  | { status: "loading"; data: ProgressData }
-  | { status: "ready"; data: ProgressData }
-  | { status: "unavailable"; data: ProgressData };
-
 export function ProgressPanel() {
-  const [state, setState] = useState<ProgressState>({
-    status: "loading",
-    data: emptyProgress(),
-  });
+  const state = useLocalProgress();
   const [confirmingReset, setConfirmingReset] = useState(false);
-
-  useEffect(() => {
-    const refresh = () => {
-      try {
-        setState({ status: "ready", data: readProgress(window.localStorage) });
-      } catch {
-        setState({ status: "unavailable", data: emptyProgress() });
-      }
-    };
-    refresh();
-    window.addEventListener("asm-progress", refresh);
-    window.addEventListener("asm-progress-unavailable", refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      window.removeEventListener("asm-progress", refresh);
-      window.removeEventListener("asm-progress-unavailable", refresh);
-      window.removeEventListener("storage", refresh);
-    };
-  }, []);
 
   function resetDeviceProgress() {
     if (!confirmingReset) {
       setConfirmingReset(true);
       return;
     }
-    try {
-      const cleared = clearProgress(window.localStorage);
-      setState({
-        status: "ready",
-        data: cleared,
-      });
-      window.dispatchEvent(
-        new CustomEvent("asm-progress", { detail: cleared }),
-      );
-    } catch {
-      setState({ status: "unavailable", data: emptyProgress() });
-    }
+    clearLocalProgress();
     setConfirmingReset(false);
   }
 

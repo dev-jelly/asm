@@ -1,7 +1,8 @@
 # 어셈블리 학습 사이트 구현 계획
 
-- 문서 상태: Draft baseline
+- 문서 상태: 승인된 장기 로드맵, 현재 구현 범위는 [CURRENT_STATUS.md](./CURRENT_STATUS.md) 참조
 - 기준일: 2026-07-24
+- 마지막 코드 대조: 2026-08-12
 - 첫 출시 대상: 한국어 기반 초보자용 RV32I 학습 웹 애플리케이션
 - 관련 결정: [ADR-0001](./decisions/ADR-0001-primary-isa-and-runtime.md)
 
@@ -9,7 +10,7 @@
 
 이 제품은 코드를 입력해 결과만 얻는 온라인 assembler가 아니다. 학습자가 실행 전에 다음 상태를 예측하고, 한 instruction이 읽고 쓴 값과 그 원인을 관찰하며, 되감기·변형·지연 복습을 거쳐 시각화 없이도 machine state를 추적할 수 있게 하는 학습 환경이다.
 
-MVP의 주 ISA는 RV32I이고, 실행은 Dedicated Web Worker 안의 계측 가능한 TypeScript interpreter가 담당한다. Worker가 machine state와 history의 유일한 권위자가 되며 UI는 `Snapshot`, `StepDelta`, `TraceBatch` protocol을 통해서만 상태를 받는다.
+MVP의 주 ISA는 RV32I이고, 실행은 Dedicated Web Worker 안의 계측 가능한 TypeScript interpreter가 담당한다. Worker가 machine state와 history의 유일한 권위자가 되며 UI는 versioned `Snapshot`과 `StepDelta` protocol을 통해서만 상태를 받는다. 여러 delta의 batch 전달은 구현되어 있지만 목표 설계의 `TraceBatch` 계약 전체는 아직 구현하지 않았다.
 
 제품은 다음 세 층을 동시에 완성해야 한다.
 
@@ -723,11 +724,16 @@ North-star는 “시뮬레이터 없이도 새로운 작은 프로그램의 상�
 
 ## 20. 다음 행동
 
-1. [GLOSSARY.md](./GLOSSARY.md)를 팀 기준 용어로 승인한다.
-2. [ADR-0001](./decisions/ADR-0001-primary-isa-and-runtime.md)의 재검토 조건을 확인한다.
-3. [RUNTIME_AND_MEMORY_VISUALIZATION.md](./architecture/RUNTIME_AND_MEMORY_VISUALIZATION.md)의 `MachineProfile`과 event schema를 구현 가능한 수준으로 고정한다.
-4. Tracer-bullet 0을 issue 5–6개로 세분화한다.
-5. 동시에 첫 lesson과 accessibility test script를 작성한다.
-6. beginner 5명 대상 테스트를 예약한 뒤 prototype을 구현한다.
+1. Tracer-bullet 2의 남은 breakpoint·checkpoint·seek 계약을 현재
+   `runId`·`seq` protocol 위에 구체화한다.
+2. history를 단순 step count가 아닌 byte budget과 checkpoint 기준으로
+   제한한다.
+3. Sail 또는 Architecture Tests의 실행 가능한 최소 subset을 CI에 추가한다.
+4. `jal`·`jalr`, ILP32 register role과 stack memory map을 구현한다.
+5. 함수·stack 전이 미션을 추가하기 전에 content schema와 진도 migration을
+   확정한다.
+6. keyboard·screen reader 수동 QA와 beginner transfer test를 수행한다.
 
-구현 완료가 아니라 학습 위험을 가장 빨리 검증하는 순서가 우선이다.
+완료된 범위와 남은 범위는 [CURRENT_STATUS.md](./CURRENT_STATUS.md)에서
+관리한다. 구현 완료 자체보다 학습 위험을 가장 빨리 검증하는 순서가
+우선이다.

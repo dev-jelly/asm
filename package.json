@@ -17,40 +17,36 @@
     "test:rendered": "node --test tests/rendered-html.test.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "astryx": "node node_modules/@astryxdesign/cli/bin/astryx.mjs"
+    "astryx": "astryx"
   },
   "dependencies": {
-    "@astryxdesign/core": "0.2.0",
-    "@astryxdesign/theme-neutral": "0.2.0",
+    "@astryxdesign/core": "0.3.0",
+    "@astryxdesign/theme-neutral": "0.3.0",
     "@stylexjs/stylex": "0.19.0",
-    "next": "16.2.12",
+    "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "0.2.0",
-    "@playwright/test": "1.62.0",
+    "@astryxdesign/cli": "0.3.0",
+    "@playwright/test": "1.62.1",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "22.19.19",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.0.2",
-    "@vitejs/plugin-rsc": "0.5.26",
+    "@vitejs/plugin-rsc": "0.5.34",
     "eslint": "9.39.4",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.0",
     "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.3.3",
-    "tsx": "4.22.1",
+    "tsx": "4.23.12",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
-    "vite": "8.1.5"
+    "vite": "8.2.1"
   },
   "overrides": {
-    "postcss": "8.5.24",
-    "sharp": "0.35.3",
-    "next": {
-      "sharp": "0.35.3"
-    }
+    "postcss": "8.5.26"
   },
   "type": "module"
 }

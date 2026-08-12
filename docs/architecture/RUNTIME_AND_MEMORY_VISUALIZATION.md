@@ -1,7 +1,8 @@
 # 런타임·메모리 시각화 설계
 
 - 기준일: 2026-07-24
-- 상태: 구현 전 기술 기준선
+- 상태: 목표 기술 설계, 현재 구현 범위는 [CURRENT_STATUS.md](../CURRENT_STATUS.md) 참조
+- 마지막 코드 대조: 2026-08-12
 - 관련 결정: [ADR-0001](../decisions/ADR-0001-primary-isa-and-runtime.md)
 
 ## 1. 기술 목표
@@ -45,6 +46,13 @@ Dedicated Web Worker
 ```
 
 Worker가 authoritative machine state와 history를 소유한다. UI는 local projection을 가지지만 reset, seek, protocol error가 발생하면 Worker `Snapshot`으로 재동기화한다.
+
+현재 코드는 이 구조의 세로형 subset을 구현한다. Dedicated Worker,
+versioned command/response, `runId`·`commandId`·`seq`, `Snapshot`,
+`StepDelta`, bounded history와 Back은 구현되어 있다. 반면 sparse memory
+region, `MachineProfile` API, breakpoint·watchpoint, checkpoint·seek,
+snapshot resync는 목표 설계이며 아직 제품 코드에 없다. 아래 type과
+interface는 실제 export의 복사본이 아니라 그 목표 계약이다.
 
 ## 3. MachineProfile v1
 

@@ -12,7 +12,7 @@ import {
   encodeSh,
   encodeSw,
 } from "../lib/rv32i/encoding";
-import { summarizeDeltaBatch } from "../app/hooks/useRv32iWorker";
+import { summarizeDeltaBatch } from "../app/lib/rv32iPresentation";
 import { Rv32iMachine } from "../lib/rv32i/machine";
 import { parseProgram } from "../lib/rv32i/parser";
 import {

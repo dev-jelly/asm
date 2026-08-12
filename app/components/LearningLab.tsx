@@ -8,12 +8,11 @@ import {
   type MemoryMissionId,
 } from "../content/memoryMissions";
 import { useRv32iWorker } from "../hooks/useRv32iWorker";
+import { useLocalProgress } from "../hooks/useLocalProgress";
 import {
-  emptyProgress,
   markLocalMissionProgress,
   readProgress,
   setLocalLastMission,
-  type ProgressData,
 } from "../lib/progress";
 import { ExecutionTimeline } from "./ExecutionTimeline";
 import { LabControls } from "./LabControls";
@@ -54,7 +53,7 @@ export function LearningLab() {
   const [source, setSource] = useState(DEFAULT_MISSION.source);
   const [draftSource, setDraftSource] = useState(DEFAULT_MISSION.source);
   const [programRequestId, setProgramRequestId] = useState(0);
-  const [progress, setProgress] = useState<ProgressData>(emptyProgress);
+  const { data: progress } = useLocalProgress();
   const lab = useRv32iWorker(
     source,
     selectedMission.options,
@@ -125,25 +124,6 @@ export function LearningLab() {
   );
   const nextMissionId =
     MEMORY_MISSIONS[currentMissionIndex + 1]?.id ?? null;
-
-  useEffect(() => {
-    const refresh = () => {
-      try {
-        setProgress(readProgress(window.localStorage));
-      } catch {
-        setProgress(emptyProgress());
-      }
-    };
-    refresh();
-    window.addEventListener("asm-progress", refresh);
-    window.addEventListener("asm-progress-unavailable", refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      window.removeEventListener("asm-progress", refresh);
-      window.removeEventListener("asm-progress-unavailable", refresh);
-      window.removeEventListener("storage", refresh);
-    };
-  }, []);
 
   useEffect(() => {
     const loadMissionFromLocation = (allowResume: boolean) => {

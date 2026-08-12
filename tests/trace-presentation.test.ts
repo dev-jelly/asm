@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { registerSummary } from "../app/components/ExecutionTimeline";
 import { describeDelta } from "../app/components/PredictionComparison";
-import { traceAfterBack } from "../app/hooks/useRv32iWorker";
+import { traceAfterBack } from "../app/lib/rv32iPresentation";
 import { Rv32iMachine } from "../lib/rv32i/machine";
 
 test("Back restores the previous remaining trace delta without mutating the input", () => {

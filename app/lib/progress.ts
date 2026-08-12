@@ -5,6 +5,8 @@ import {
 
 export const PROGRESS_KEY = "asm-lab-progress";
 export const PROGRESS_VERSION = 3 as const;
+export const PROGRESS_EVENT = "asm-progress";
+export const PROGRESS_UNAVAILABLE_EVENT = "asm-progress-unavailable";
 
 export const MISSION_IDS = MEMORY_MISSION_IDS;
 export type MissionId = MemoryMissionId;
@@ -49,7 +51,7 @@ export type StorageAdapter = Pick<
   "getItem" | "setItem" | "removeItem"
 >;
 
-export const LEGACY_ACTIVITY_TO_MISSION = {
+const LEGACY_ACTIVITY_TO_MISSION = {
   "tracer-bullet": "memory-little-endian",
   "signed-loads": "memory-signed-loads",
   "little-endian": "memory-little-endian",
@@ -94,7 +96,7 @@ export function isMissionId(value: unknown): value is MissionId {
   return typeof value === "string" && MISSION_ID_SET.has(value);
 }
 
-export function resolveMissionId(value: string): MissionId | null {
+function resolveMissionId(value: string): MissionId | null {
   if (isMissionId(value)) return value;
   return (
     LEGACY_ACTIVITY_TO_MISSION[
@@ -452,21 +454,12 @@ export function clearProgress(storage: StorageAdapter): ProgressData {
   return emptyProgress();
 }
 
-/**
- * Storage-level compatibility wrapper for callers that still use v1 activity
- * IDs. A completed legacy walkthrough counts as guided evidence, not transfer.
- */
-export function completeActivity(
-  storage: StorageAdapter,
-  activityId: string,
-): ProgressData {
-  const missionId = resolveMissionId(activityId);
-  if (!missionId) return readProgress(storage);
-  return saveMissionProgress(storage, missionId, { status: "guided" });
+function dispatchProgress(progress: ProgressData): void {
+  window.dispatchEvent(new CustomEvent(PROGRESS_EVENT, { detail: progress }));
 }
 
-function dispatchProgress(progress: ProgressData): void {
-  window.dispatchEvent(new CustomEvent("asm-progress", { detail: progress }));
+function dispatchProgressUnavailable(): void {
+  window.dispatchEvent(new Event(PROGRESS_UNAVAILABLE_EVENT));
 }
 
 export function markLocalMissionProgress(
@@ -484,7 +477,7 @@ export function markLocalMissionProgress(
     });
     dispatchProgress(progress);
   } catch {
-    window.dispatchEvent(new Event("asm-progress-unavailable"));
+    dispatchProgressUnavailable();
   }
 }
 
@@ -493,13 +486,15 @@ export function setLocalLastMission(missionId: MissionId | null): void {
   try {
     dispatchProgress(saveLastMission(window.localStorage, missionId));
   } catch {
-    window.dispatchEvent(new Event("asm-progress-unavailable"));
+    dispatchProgressUnavailable();
   }
 }
 
-/** @deprecated Prefer markLocalMissionProgress with a canonical mission ID. */
-export function markLocalProgress(activityId: string): void {
-  const missionId = resolveMissionId(activityId);
-  if (!missionId) return;
-  markLocalMissionProgress(missionId, { status: "guided" });
+export function clearLocalProgress(): void {
+  if (typeof window === "undefined") return;
+  try {
+    dispatchProgress(clearProgress(window.localStorage));
+  } catch {
+    dispatchProgressUnavailable();
+  }
 }

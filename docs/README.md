@@ -2,24 +2,28 @@
 
 이 디렉터리는 초보자를 위한 어셈블리 학습 사이트를 설계·구현하기 위한 기준 문서 모음이다. 사이트의 중심 경험은 학습자가 코드를 실행하기 전에 상태 변화를 예측하고, 한 명령씩 실행하면서 레지스터와 메모리의 변화를 관찰하며, 되감기와 변형 문제를 통해 정확한 기계 모델을 형성하는 것이다.
 
-문서 기준일은 **2026-07-24**이다. 외부 자료는 원문을 복제하지 않고, 직접 작성한 요약·공식 링크·접근 조건·라이선스·권장 사용 방식으로 기록한다.
+설계·조사 기준선은 **2026-07-24**, 코드와 대조한 현재 상태는
+**2026-08-12**이다. 외부 자료는 원문을 복제하지 않고, 직접 작성한
+요약·공식 링크·접근 조건·라이선스·권장 사용 방식으로 기록한다.
 
 ## 권장 읽기 순서
 
 | 순서 | 문서 | 목적 |
 |---:|---|---|
-| 1 | [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) | 제품 목표, 범위, 작업 흐름, 단계별 산출물, 의존성, 위험과 종료 조건을 다루는 마스터 계획 |
-| 2 | [decisions/ADR-0001-primary-isa-and-runtime.md](./decisions/ADR-0001-primary-isa-and-runtime.md) | RV32I와 TypeScript Worker 런타임을 첫 구현으로 선택한 이유와 결과 |
-| 3 | [architecture/RUNTIME_AND_MEMORY_VISUALIZATION.md](./architecture/RUNTIME_AND_MEMORY_VISUALIZATION.md) | 교육용 기계, assembler, 실행 코어, 이벤트, 메모리, 되감기, 보안, 테스트의 기술 설계 |
-| 4 | [product/LEARNING_AND_CONTENT_DESIGN.md](./product/LEARNING_AND_CONTENT_DESIGN.md) | 학습 원리, 커리큘럼, 레슨·문제·채점·진도 모델 |
-| 5 | [product/UX_AND_ACCESSIBILITY.md](./product/UX_AND_ACCESSIBILITY.md) | 정보 구조, 화면·상호작용, 반응형 디자인, 접근성 기준 |
-| 6 | [research/RESEARCH_SYNTHESIS.md](./research/RESEARCH_SYNTHESIS.md) | 조사에서 얻은 결론, ISA 대안, 선행 사례, 오개념과 설계 원칙 |
-| 7 | [research/RESOURCE_CATALOG.md](./research/RESOURCE_CATALOG.md) | 공식 명세, 강의, 교재, 도구, 연구 자료, 라이선스와 재사용 범위 |
-| 8 | [GLOSSARY.md](./GLOSSARY.md) | 문서와 UI에서 사용할 한·영 용어, 범위 배지, 명명 규칙 |
+| 1 | [CURRENT_STATUS.md](./CURRENT_STATUS.md) | 실제 코드와 자동 검사에 근거한 구현·부분 구현·미구현 범위 |
+| 2 | [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) | 제품 목표, 범위, 작업 흐름, 단계별 산출물, 의존성, 위험과 종료 조건을 다루는 마스터 계획 |
+| 3 | [decisions/ADR-0001-primary-isa-and-runtime.md](./decisions/ADR-0001-primary-isa-and-runtime.md) | RV32I와 TypeScript Worker 런타임을 첫 구현으로 선택한 이유와 결과 |
+| 4 | [architecture/RUNTIME_AND_MEMORY_VISUALIZATION.md](./architecture/RUNTIME_AND_MEMORY_VISUALIZATION.md) | 교육용 기계, assembler, 실행 코어, 이벤트, 메모리, 되감기, 보안, 테스트의 목표 설계 |
+| 5 | [product/LEARNING_AND_CONTENT_DESIGN.md](./product/LEARNING_AND_CONTENT_DESIGN.md) | 학습 원리, 커리큘럼, 레슨·문제·채점·진도 모델 |
+| 6 | [product/UX_AND_ACCESSIBILITY.md](./product/UX_AND_ACCESSIBILITY.md) | 정보 구조, 화면·상호작용, 반응형 디자인, 접근성 기준 |
+| 7 | [research/RESEARCH_SYNTHESIS.md](./research/RESEARCH_SYNTHESIS.md) | 조사에서 얻은 결론, ISA 대안, 선행 사례, 오개념과 설계 원칙 |
+| 8 | [research/RESOURCE_CATALOG.md](./research/RESOURCE_CATALOG.md) | 공식 명세, 강의, 교재, 도구, 연구 자료, 라이선스와 재사용 범위 |
+| 9 | [GLOSSARY.md](./GLOSSARY.md) | 문서와 UI에서 사용할 한·영 용어, 범위 배지, 명명 규칙 |
 
 ## 문서 간 책임 경계
 
 - `IMPLEMENTATION_PLAN.md`는 **무엇을 어떤 순서와 조건으로 만들지**를 결정한다.
+- `CURRENT_STATUS.md`는 **그중 무엇이 현재 코드에 구현되어 있는지**를 기록한다.
 - `LEARNING_AND_CONTENT_DESIGN.md`는 **무엇을 어떻게 가르치고 평가할지**를 결정한다.
 - `UX_AND_ACCESSIBILITY.md`는 **학습자가 무엇을 보고 어떻게 조작할지**를 결정한다.
 - `RUNTIME_AND_MEMORY_VISUALIZATION.md`는 **코드를 어떻게 정확하고 안전하게 실행·기록·표시할지**를 결정한다.
@@ -53,15 +57,10 @@
 
 ## 현재 상태
 
-`IMPLEMENTATION_PLAN.md`의 “Tracer-bullet 0”에 해당하는 첫 세로형
-프로토타입이 구현되어 GitHub Pages에 배포되어 있다. 현재 애플리케이션은
-`addi`, 폭·부호별 load, 폭별 store, `beq` 실행,
-Step·Back·Reset·Run·Pause, 상태 변화와 바이트 메모리 관찰, 주소와 값
-비교 레슨, 직접 소스 편집, 실행 기록, 로컬 진도 내보내기를 제공한다.
-실행은 브라우저의 Dedicated Worker
-안에서 이루어지며 서버 데이터베이스나 계정 시스템을 사용하지 않는다.
-
-다음 구현 단계는 계획의 Tracer-bullet 2 이후 범위인
-breakpoint·checkpoint/seek, 함수·스택·ABI 레슨과 전체 학습 콘텐츠
-확장이다. 현재 배포 구성은 `main` 푸시를 검증한 뒤 정적 산출물을
+Tracer-bullet 0과 1, Tracer-bullet 2의 branch·loop timeline·instruction
+budget까지 구현되어 GitHub Pages에 배포되어 있다. 다음 단계는
+Tracer-bullet 2의 남은 breakpoint·checkpoint/seek를 완성한 뒤
+함수·stack·ABI 범위로 진행하는 것이다. 세부 구현·미구현 목록은
+[CURRENT_STATUS.md](./CURRENT_STATUS.md)를 기준으로 한다. 현재 배포
+구성은 `main` 푸시를 검증한 뒤 정적 산출물을
 [GitHub Pages](https://dev-jelly.github.io/asm/)에 게시한다.

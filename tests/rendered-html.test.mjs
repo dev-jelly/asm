@@ -77,6 +77,8 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
     memoryVisualizer,
     timeline,
     hook,
+    presentation,
+    localProgressHook,
     controls,
     predictionGate,
     predictionComparison,
@@ -104,6 +106,14 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
         "utf8",
       ),
       readFile(new URL("../app/hooks/useRv32iWorker.ts", import.meta.url), "utf8"),
+      readFile(
+        new URL("../app/lib/rv32iPresentation.ts", import.meta.url),
+        "utf8",
+      ),
+      readFile(
+        new URL("../app/hooks/useLocalProgress.ts", import.meta.url),
+        "utf8",
+      ),
       readFile(
         new URL("../app/components/LabControls.tsx", import.meta.url),
         "utf8",
@@ -210,11 +220,17 @@ test("state, accessibility, and lifecycle contracts are present in product sourc
   assert.match(hook, /commandPending/);
   assert.match(hook, /appendTrace\(current, committedDeltas\)/);
   assert.match(hook, /if \(response\.reason === "run-chunk"\) return/);
-  assert.match(hook, /summarizeDeltaBatch/);
+  assert.match(hook, /summarizeResponse/);
+  assert.match(presentation, /summarizeDeltaBatch/);
+  assert.match(presentation, /deltas\.length/);
   assert.ok(
     hook.indexOf("setTrace((current) => appendTrace(current, committedDeltas))") <
       hook.indexOf('setStatus("error")'),
   );
+  assert.match(localProgressHook, /readProgress\(window\.localStorage\)/);
+  assert.match(localProgressHook, /PROGRESS_EVENT/);
+  assert.match(localProgressHook, /PROGRESS_UNAVAILABLE_EVENT/);
+  assert.match(localProgressHook, /window\.addEventListener\("storage"/);
 
   assert.match(controls, /<fieldset className="lab-controls">/);
   assert.match(controls, /canRun/);

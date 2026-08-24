@@ -63,9 +63,8 @@ Cloudflare Worker, D1, R2, or a server-side persistence service.
 ## Dependency security
 
 The production dependency audit is a blocking CI check. A full audit also runs
-with a critical-severity failure threshold; it currently reports nine
-high-severity findings in the development-only ESLint/minimatch dependency tree
-without failing the workflow because they cannot yet be removed without
-incompatible ecosystem upgrades. The `postcss` and `sharp` overrides are
-temporary security pins and should be removed once upstream-compatible patched
-versions are available.
+with a critical-severity failure threshold so development-tool advisories remain
+visible without blocking a static production deploy. Treat the CI audit output,
+not a vulnerability count copied into this document, as the current source of
+truth. See [the current implementation status](./docs/CURRENT_STATUS.md) for the
+implemented product scope and remaining work.

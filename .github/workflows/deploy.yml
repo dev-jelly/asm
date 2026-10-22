@@ -1,11 +1,9 @@
+# Branch builds run on Gitea; retain GitHub-only external PR checks.
 name: Deploy to GitHub Pages
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch:
 
 permissions: {}
 
@@ -15,6 +13,7 @@ concurrency:
 
 jobs:
   quality:
+    if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -34,6 +33,7 @@ jobs:
       - run: npm run test:unit
 
   build:
+    if: github.event.pull_request.head.repo.full_name != github.repository
     needs: quality
     runs-on: ubuntu-latest
     permissions:
@@ -50,24 +50,3 @@ jobs:
       - run: npm run test:rendered
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
-      - if: github.event_name != 'pull_request'
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-      - if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: ./dist/client
-          include-hidden-files: true
-
-  deploy:
-    needs: build
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

@@ -163,7 +163,7 @@ export default function Home() {
             <strong>실험실 실행 정책:</strong> 데이터 메모리는{" "}
             <code>0x00001000</code>부터 4 KiB입니다. halfword는 2바이트,
             word는 4바이트 정렬을 요구합니다. 여러 바이트 값은 낮은 주소부터
-            하위 바이트를 읽고 쓰며, 초기화되지 않은 byte도 별도로 표시합니다.
+            하위 바이트를 읽고 쓰며 초기화되지 않은 byte도 별도로 표시합니다.
           </p>
         </section>
 

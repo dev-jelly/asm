@@ -378,7 +378,7 @@ export function MemoryVisualizer({
         className="memory-grid"
         data-unit-size={unitSize}
         role="group"
-        aria-label={`${formatHex(pageStart)}부터 ${formatHex(pageEnd)}까지 메모리`}
+        aria-label={`${formatHex(pageStart)}부터 ${formatHex(pageEnd)}까지의 메모리`}
       >
         {units.map((unit, index) => {
           const selected = unit.offset === selectedUnit?.offset;

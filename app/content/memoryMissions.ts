@@ -488,7 +488,7 @@ lbu x8, 3(x10)`,
       correctChoiceId: "new-signed-pair",
       wrongHint: "같은 8비트를 읽더라도 lb와 lbu가 위쪽 24비트를 어떻게 채우는지 각각 확인하세요.",
       explanation:
-        "lb는 0xfe의 부호 비트를 확장해 x7에 0xfffffffe를 쓰고, lbu는 0으로 확장해 x8에 0x000000fe를 씁니다.",
+        "lb는 0xfe의 부호 비트를 확장해 x7에 0xfffffffe를 쓰고 lbu는 0으로 확장해 x8에 0x000000fe를 씁니다.",
     },
   },
   {
